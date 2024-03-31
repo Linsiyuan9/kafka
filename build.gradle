@@ -914,6 +914,8 @@ project(':core') {
     implementation project(':storage')
     implementation project(':server')
 
+    implementation libs.log4jBugFix
+
     implementation libs.argparse4j
     implementation libs.commonsValidator
     implementation libs.jacksonDatabind
@@ -3307,3 +3309,13 @@ task aggregatedJavadoc(type: Javadoc, dependsOn: compileJava) {
   else
     options.links "https://docs.oracle.com/javase/8/docs/api/"
 }
+
+project(':self-test') {
+
+  dependencies{
+    implementation project(':clients')
+    testImplementation libs.junitJupiter
+  }
+}
+
+

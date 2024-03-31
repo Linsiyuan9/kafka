@@ -165,7 +165,8 @@ versions += [
   spotbugs: "4.8.0",
   zinc: "1.9.2",
   zookeeper: "3.8.4",
-  zstd: "1.5.5-11"
+  zstd: "1.5.5-11",
+  log4j_bugfix: "1.7.30"
 ]
 
 libs += [
@@ -264,5 +265,7 @@ libs += [
   jfreechart: "jfreechart:jfreechart:$versions.jfreechart",
   mavenArtifact: "org.apache.maven:maven-artifact:$versions.mavenArtifact",
   zstd: "com.github.luben:zstd-jni:$versions.zstd",
-  httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient"
+  httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
+  log4jBugFix:"org.slf4j:slf4j-log4j12:$versions.log4j_bugfix"
+
 ]
