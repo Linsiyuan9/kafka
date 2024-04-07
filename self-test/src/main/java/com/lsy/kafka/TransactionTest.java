@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.lsy.kafka;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -8,10 +25,18 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 public class TransactionTest {
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
+
+//        t2();
+//        t3();
+//        t4();
+    }
+
+    public static void t2() throws ExecutionException, InterruptedException {
         // 设置 Kafka 生产者的配置`
         Properties properties = new Properties();
         properties.put("bootstrap.servers", "localhost:9092");
@@ -27,21 +52,209 @@ public class TransactionTest {
 
         KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
 
-        ProducerRecord<String, String> producerRecord = new ProducerRecord<>(
-                "test-topic", "sendKey", "sendValue");
+        ProducerRecord<String, String> producerRecord1 = new ProducerRecord<>(
+                "test-topic-1", "1", "sendValue");
+
+        ProducerRecord<String, String> producerRecord2 = new ProducerRecord<>(
+                "test-topic-1", "2", "sendValue");
+
+
+        ProducerRecord<String, String> producerRecord3 = new ProducerRecord<>(
+                "test-topic-1", "3", "sendValue");
 
         producer.initTransactions();
         producer.beginTransaction();
-        Future<RecordMetadata> recordResult = producer.send(producerRecord);
+        Future<RecordMetadata> recordResult1 = producer.send(producerRecord1);
+        Future<RecordMetadata> recordResult2 = producer.send(producerRecord2);
+        Future<RecordMetadata> recordResult3 = producer.send(producerRecord3);
+
+        System.out.println(Thread.currentThread().getName() + ":start sleep");
+        TimeUnit.SECONDS.sleep(100);
+        System.out.println(Thread.currentThread().getName() + ":end sleep");
 
         producer.commitTransaction();
-
-        RecordMetadata recordMetadata = recordResult.get();
-        if (recordResult.isDone() && recordMetadata != null && recordMetadata.offset() >= 0) {
-            System.out.println(recordMetadata);
-        } else {
-            System.out.println("G");
-        }
+        recordResult1.get();
+        recordResult2.get();
+        recordResult3.get();
     }
 
+    public static void t3() {
+        new Thread(() -> {
+            try {
+                // 设置 Kafka 生产者的配置`
+                Properties properties = new Properties();
+                properties.put("bootstrap.servers", "localhost:9092");
+                properties.put("acks", "all");
+                properties.put("batch.size", 16384);
+                properties.put("linger.ms", 1);
+                properties.put("buffer.memory", 33554432);
+                properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                properties.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "my_tx_id_1");
+                properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+                properties.put(ProducerConfig.RETRIES_CONFIG, 10);
+
+                KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
+
+                ProducerRecord<String, String> producerRecord1 = new ProducerRecord<>(
+                        "test-topic-1", "my_tx_id_1", "sendValue");
+
+                ProducerRecord<String, String> producerRecord2 = new ProducerRecord<>(
+                        "test-topic-1", "my_tx_id_1", "sendValue");
+
+
+                ProducerRecord<String, String> producerRecord3 = new ProducerRecord<>(
+                        "test-topic-1", "my_tx_id_1", "sendValue");
+
+                producer.initTransactions();
+                producer.beginTransaction();
+
+                for (int i = 0; i < 10; i++) {
+                    System.out.println(Thread.currentThread().getName() + ":start sleep");
+                    TimeUnit.SECONDS.sleep(1);
+                    System.out.println(Thread.currentThread().getName() + ":end sleep");
+                    Future<RecordMetadata> recordResult1 = producer.send(producerRecord1);
+                    System.out.println(Thread.currentThread().getName() + ":start sleep");
+                    TimeUnit.SECONDS.sleep(1);
+                    System.out.println(Thread.currentThread().getName() + ":end sleep");
+                    Future<RecordMetadata> recordResult2 = producer.send(producerRecord2);
+                    System.out.println(Thread.currentThread().getName() + ":start sleep");
+                    TimeUnit.SECONDS.sleep(1);
+                    System.out.println(Thread.currentThread().getName() + ":end sleep");
+                    Future<RecordMetadata> recordResult3 = producer.send(producerRecord3);
+                    recordResult1.get();
+                    recordResult2.get();
+                    recordResult3.get();
+                }
+                producer.commitTransaction();
+
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).start();
+
+        new Thread(() -> {
+            try {
+                // 设置 Kafka 生产者的配置`
+                Properties properties = new Properties();
+                properties.put("bootstrap.servers", "localhost:9092");
+                properties.put("acks", "all");
+                properties.put("batch.size", 16384);
+                properties.put("linger.ms", 1);
+                properties.put("buffer.memory", 33554432);
+                properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                properties.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "my_tx_id_2");
+                properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+                properties.put(ProducerConfig.RETRIES_CONFIG, 10);
+
+                KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
+
+                ProducerRecord<String, String> producerRecord1 = new ProducerRecord<>(
+                        "test-topic-1", "my_tx_id_2", "sendValue");
+
+                ProducerRecord<String, String> producerRecord2 = new ProducerRecord<>(
+                        "test-topic-1", "my_tx_id_2", "sendValue");
+
+
+                ProducerRecord<String, String> producerRecord3 = new ProducerRecord<>(
+                        "test-topic-1", "my_tx_id_2", "sendValue");
+
+                producer.initTransactions();
+                producer.beginTransaction();
+
+                for (int i = 0; i < 10; i++) {
+                    System.out.println(Thread.currentThread().getName() + ":start sleep");
+                    TimeUnit.SECONDS.sleep(1);
+                    System.out.println(Thread.currentThread().getName() + ":end sleep");
+                    Future<RecordMetadata> recordResult1 = producer.send(producerRecord1);
+                    System.out.println(Thread.currentThread().getName() + ":start sleep");
+                    TimeUnit.SECONDS.sleep(1);
+                    System.out.println(Thread.currentThread().getName() + ":end sleep");
+                    Future<RecordMetadata> recordResult2 = producer.send(producerRecord2);
+                    System.out.println(Thread.currentThread().getName() + ":start sleep");
+                    TimeUnit.SECONDS.sleep(1);
+                    System.out.println(Thread.currentThread().getName() + ":end sleep");
+                    Future<RecordMetadata> recordResult3 = producer.send(producerRecord3);
+                    recordResult1.get();
+                    recordResult2.get();
+                    recordResult3.get();
+                }
+
+                producer.commitTransaction();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).start();
+    }
+
+
+    public static void t4() {
+        new Thread(() -> {
+            try {
+                for (int i = 0; i < 1000; i++) {
+
+                    // 设置 Kafka 生产者的配置`
+                    Properties properties = new Properties();
+                    properties.put("bootstrap.servers", "localhost:9092");
+                    properties.put("acks", "all");
+                    properties.put("batch.size", 16384);
+                    properties.put("linger.ms", 1);
+                    properties.put("buffer.memory", 33554432);
+                    properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                    properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                    properties.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "my_tx_id_1");
+                    properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+                    properties.put(ProducerConfig.RETRIES_CONFIG, 10);
+
+                    KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
+
+                    ProducerRecord<String, String> producerRecord1 = new ProducerRecord<>(
+                            "test-topic-1", "my_tx_id_1", "sendValue");
+
+                    producer.initTransactions();
+                    producer.beginTransaction();
+                    Future<RecordMetadata> recordResult1 = producer.send(producerRecord1);
+                    recordResult1.get();
+                    producer.commitTransaction();
+
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).start();
+
+        new Thread(() -> {
+            try {
+                for (int i = 0; i < 1000; i++) {
+                    // 设置 Kafka 生产者的配置`
+                    Properties properties = new Properties();
+                    properties.put("bootstrap.servers", "localhost:9092");
+                    properties.put("acks", "all");
+                    properties.put("batch.size", 16384);
+                    properties.put("linger.ms", 1);
+                    properties.put("buffer.memory", 33554432);
+                    properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                    properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                    properties.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "my_tx_id_2");
+                    properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+                    properties.put(ProducerConfig.RETRIES_CONFIG, 10);
+
+                    KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
+
+                    ProducerRecord<String, String> producerRecord1 = new ProducerRecord<>(
+                            "test-topic-1", "my_tx_id_2", "sendValue");
+
+                    producer.initTransactions();
+                    producer.beginTransaction();
+                    Future<RecordMetadata> recordResult1 = producer.send(producerRecord1);
+                    recordResult1.get();
+                    producer.commitTransaction();
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+        }).start();
+    }
 }
