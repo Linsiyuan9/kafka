@@ -36,17 +36,23 @@ public class WriteTxnMarkersRequest extends AbstractRequest {
     public static class TxnMarkerEntry {
         private final long producerId;
         private final short producerEpoch;
+        private final long bumpProducerId;
+        private final short bumpProducerEpoch;
         private final int coordinatorEpoch;
         private final TransactionResult result;
         private final List<TopicPartition> partitions;
 
         public TxnMarkerEntry(long producerId,
                               short producerEpoch,
+                              long bumpProducerId,
+                              short bumpProducerEpoch,
                               int coordinatorEpoch,
                               TransactionResult result,
                               List<TopicPartition> partitions) {
             this.producerId = producerId;
             this.producerEpoch = producerEpoch;
+            this.bumpProducerId = bumpProducerId;
+            this.bumpProducerEpoch = bumpProducerEpoch;
             this.coordinatorEpoch = coordinatorEpoch;
             this.result = result;
             this.partitions = partitions;
@@ -58,6 +64,14 @@ public class WriteTxnMarkersRequest extends AbstractRequest {
 
         public short producerEpoch() {
             return producerEpoch;
+        }
+
+        public long bumpProducerId() {
+            return bumpProducerId;
+        }
+
+        public short bumpProducerEpoch() {
+            return bumpProducerEpoch;
         }
 
         public int coordinatorEpoch() {

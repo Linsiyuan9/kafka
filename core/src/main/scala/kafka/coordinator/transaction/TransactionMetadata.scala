@@ -239,6 +239,8 @@ private[transaction] class TransactionMetadata(val transactionalId: String,
 
   private[transaction] val lock = new ReentrantLock
 
+  def nextProducerEpoch: Short = (producerEpoch + 1).toShort
+
   def inLock[T](fun: => T): T = CoreUtils.inLock(lock)(fun)
 
   def addPartitions(partitions: collection.Set[TopicPartition]): Unit = {
@@ -340,12 +342,12 @@ private[transaction] class TransactionMetadata(val transactionalId: String,
       txnStartTimestamp, updateTimestamp)
   }
 
-  def prepareComplete(updateTimestamp: Long): TxnTransitMetadata = {
+  def prepareComplete(updateTimestamp: Long, newProducerId: Long, newProducerEpoch: Short): TxnTransitMetadata = {
     val newState = if (state == PrepareCommit) CompleteCommit else CompleteAbort
 
     // Since the state change was successfully written to the log, unset the flag for a failed epoch fence
-    hasFailedEpochFence = false
-    prepareTransitionTo(newState, producerId, producerEpoch, lastProducerEpoch, txnTimeoutMs, Set.empty[TopicPartition],
+      hasFailedEpochFence = false
+      prepareTransitionTo(newState, newProducerId, newProducerEpoch, producerEpoch, txnTimeoutMs, Set.empty[TopicPartition],
       txnStartTimestamp, updateTimestamp)
   }
 

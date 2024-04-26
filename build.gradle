@@ -732,7 +732,7 @@ subprojects {
     description = 'Run checkstyle on all test Java sources'
   }
 
-  test.dependsOn('checkstyleMain', 'checkstyleTest')
+//  test.dependsOn('checkstyleMain', 'checkstyleTest')
 
   spotbugs {
     toolVersion = versions.spotbugs

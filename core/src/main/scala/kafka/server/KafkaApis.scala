@@ -19,7 +19,7 @@ package kafka.server
 
 import kafka.api.ElectLeadersRequestOps
 import kafka.controller.ReplicaAssignment
-import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
+import kafka.coordinator.transaction.{EndTxnResult, InitProducerIdResult, TransactionCoordinator}
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UnboundedQuota}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
@@ -2325,7 +2325,10 @@ class KafkaApis(val requestChannel: RequestChannel,
     val transactionalId = endTxnRequest.data.transactionalId
 
     if (authHelper.authorize(request.context, WRITE, TRANSACTIONAL_ID, transactionalId)) {
-      def sendResponseCallback(error: Errors): Unit = {
+      def sendResponseCallback(endTxnResult: EndTxnResult): Unit = {
+        val error = endTxnResult.error
+        val bumpProducerId = endTxnResult.bumpProducerId
+        val bumpProducerEpoch = endTxnResult.bumpProducerEpoch
         def createResponse(requestThrottleMs: Int): AbstractResponse = {
           val finalError =
             if (endTxnRequest.version < 2 && error == Errors.PRODUCER_FENCED) {
@@ -2337,7 +2340,9 @@ class KafkaApis(val requestChannel: RequestChannel,
             }
           val responseBody = new EndTxnResponse(new EndTxnResponseData()
             .setErrorCode(finalError.code)
-            .setThrottleTimeMs(requestThrottleMs))
+            .setThrottleTimeMs(requestThrottleMs)
+            .setBumpProducerId(bumpProducerId)
+            .setBumpEpoch(bumpProducerEpoch))
           trace(s"Completed ${endTxnRequest.data.transactionalId}'s EndTxnRequest " +
             s"with committed: ${endTxnRequest.data.committed}, " +
             s"errors: $error from client ${request.header.clientId}.")
@@ -2349,6 +2354,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       txnCoordinator.handleEndTransaction(endTxnRequest.data.transactionalId,
         endTxnRequest.data.producerId,
         endTxnRequest.data.producerEpoch,
+        endTxnRequest.version > 4,
         endTxnRequest.result(),
         sendResponseCallback,
         requestLocal)

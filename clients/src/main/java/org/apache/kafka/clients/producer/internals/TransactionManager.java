@@ -1544,9 +1544,10 @@ public class TransactionManager {
         public void handleResponse(AbstractResponse response) {
             EndTxnResponse endTxnResponse = (EndTxnResponse) response;
             Errors error = endTxnResponse.error();
-
+            long bumpProducerId = endTxnResponse.data().bumpProducerId();
+            short bumpEpoch = endTxnResponse.data().bumpEpoch();
             if (error == Errors.NONE) {
-                completeTransaction();
+                completeTransaction(bumpProducerId, bumpEpoch);
                 result.done();
             } else if (error == Errors.COORDINATOR_NOT_AVAILABLE || error == Errors.NOT_COORDINATOR) {
                 lookupCoordinator(FindCoordinatorRequest.CoordinatorType.TRANSACTION, transactionalId);

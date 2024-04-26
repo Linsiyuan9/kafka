@@ -25,7 +25,9 @@
   // Version 3 enables flexible versions.
   //
   // Version 4 adds support for new error code TRANSACTION_ABORTABLE (KIP-890).
-  "validVersions": "0-4",
+  //
+  // Version 5 always bump the epoch upon the commit or abort of a transaction (KIP-890).
+  "validVersions": "0-5",
   "flexibleVersions": "3+",
   "fields": [
     { "name": "TransactionalId", "type": "string", "versions": "0+", "entityType": "transactionalId",
