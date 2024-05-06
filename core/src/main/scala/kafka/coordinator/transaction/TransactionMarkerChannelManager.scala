@@ -391,8 +391,6 @@ class TransactionMarkerChannelManager(
     }
 
     val coordinatorEpoch = pendingCompleteTxn.coordinatorEpoch
-    val coordinatorEpoch = pendingCompleteTxn.coordinatorEpoch
-    val coordinatorEpoch = pendingCompleteTxn.coordinatorEpoch
     for ((broker: Option[Node], topicPartitions: immutable.Set[TopicPartition]) <- partitionsByDestination) {
       broker match {
         case Some(brokerNode) =>

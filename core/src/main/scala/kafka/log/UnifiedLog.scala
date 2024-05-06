@@ -31,7 +31,7 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.requests.ListOffsetsRequest
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.UNDEFINED_EPOCH_OFFSET
 import org.apache.kafka.common.requests.ProduceResponse.RecordError
-import org.apache.kafka.common.utils.{PrimitiveRef, Time, Utils}
+import org.apache.kafka.common.utils.{PrimitiveRef, ProducerIdAndEpoch, Time, Utils}
 import org.apache.kafka.common.{InvalidRecordException, KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.common.MetadataVersion.IBP_0_10_0_IV0
@@ -719,9 +719,10 @@ class UnifiedLog(@volatile var logStartOffset: Long,
                      origin: AppendOrigin = AppendOrigin.CLIENT,
                      interBrokerProtocolVersion: MetadataVersion = MetadataVersion.latestProduction,
                      requestLocal: RequestLocal = RequestLocal.NoCaching,
-                     verificationGuard: VerificationGuard = VerificationGuard.SENTINEL): LogAppendInfo = {
+                     verificationGuard: VerificationGuard = VerificationGuard.SENTINEL,
+                     partitionBumpProducerIdAndEpoch: mutable.Map[Long, ProducerIdAndEpoch] = mutable.Map.empty): LogAppendInfo = {
     val validateAndAssignOffsets = origin != AppendOrigin.RAFT_LEADER
-    append(records, origin, interBrokerProtocolVersion, validateAndAssignOffsets, leaderEpoch, Some(requestLocal), verificationGuard, ignoreRecordSize = false)
+    append(records, origin, interBrokerProtocolVersion, validateAndAssignOffsets, leaderEpoch, Some(requestLocal), verificationGuard, ignoreRecordSize = false, partitionBumpProducerIdAndEpoch)
   }
 
   /**
@@ -740,7 +741,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       requestLocal = None,
       verificationGuard = VerificationGuard.SENTINEL,
       // disable to check the validation of record size since the record is already accepted by leader.
-      ignoreRecordSize = true)
+      ignoreRecordSize = true,
+      partitionBumpProducerIdAndEpoch = ProducerIdAndEpoch.NONE)
   }
 
   /**
@@ -768,7 +770,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
                      leaderEpoch: Int,
                      requestLocal: Option[RequestLocal],
                      verificationGuard: VerificationGuard,
-                     ignoreRecordSize: Boolean): LogAppendInfo = {
+                     ignoreRecordSize: Boolean,
+                     partitionBumpProducerIdAndEpoch: mutable.Map[Long, ProducerIdAndEpoch]): LogAppendInfo = {
     // We want to ensure the partition metadata file is written to the log dir before any log data is written to disk.
     // This will ensure that any log data can be recovered with the correct topic ID in the case of failure.
     maybeFlushMetadataFile()
@@ -890,7 +893,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
           // now that we have valid records, offsets assigned, and timestamps updated, we need to
           // validate the idempotent/transactional state of the producers and collect some metadata
           val (updatedProducers, completedTxns, maybeDuplicate) = analyzeAndValidateProducerState(
-            logOffsetMetadata, validRecords, origin, verificationGuard)
+            logOffsetMetadata, validRecords, origin, verificationGuard, partitionBumpProducerIdAndEpoch)
 
           maybeDuplicate match {
             case Some(duplicate) =>
@@ -1028,7 +1031,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   private def analyzeAndValidateProducerState(appendOffsetMetadata: LogOffsetMetadata,
                                               records: MemoryRecords,
                                               origin: AppendOrigin,
-                                              requestVerificationGuard: VerificationGuard):
+                                              requestVerificationGuard: VerificationGuard,
+                                              partitionBumpProducerIdAndEpoch: mutable.Map[Long, ProducerIdAndEpoch]):
   (mutable.Map[Long, ProducerAppendInfo], List[CompletedTxn], Option[BatchMetadata]) = {
     val updatedProducers = mutable.Map.empty[Long, ProducerAppendInfo]
     val completedTxns = ListBuffer.empty[CompletedTxn]
@@ -1074,8 +1078,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
           Some(new LogOffsetMetadata(batch.baseOffset, appendOffsetMetadata.segmentBaseOffset, relativePositionInSegment))
         else
           None
-
-        val maybeCompletedTxn = updateProducers(producerStateManager, batch, updatedProducers, firstOffsetMetadata, origin)
+        val bumpProducerIdAndEpoch = partitionBumpProducerIdAndEpoch.getOrElse(batch.producerId(), ProducerIdAndEpoch.NONE)
+        val maybeCompletedTxn = updateProducers(producerStateManager, batch, updatedProducers, firstOffsetMetadata, origin, bumpProducerIdAndEpoch)
         maybeCompletedTxn.foreach(completedTxns += _)
       }
 
@@ -2084,10 +2088,11 @@ object UnifiedLog extends Logging {
                               batch: RecordBatch,
                               producers: mutable.Map[Long, ProducerAppendInfo],
                               firstOffsetMetadata: Option[LogOffsetMetadata],
-                              origin: AppendOrigin): Option[CompletedTxn] = {
+                              origin: AppendOrigin,
+                              bumpProducerIdAndEpoch: ProducerIdAndEpoch = ProducerIdAndEpoch.NONE): Option[CompletedTxn] = {
     val producerId = batch.producerId
     val appendInfo = producers.getOrElseUpdate(producerId, producerStateManager.prepareUpdate(producerId, origin))
-    val completedTxn = appendInfo.append(batch, firstOffsetMetadata.asJava).asScala
+    val completedTxn = appendInfo.append(batch, firstOffsetMetadata.asJava, bumpProducerIdAndEpoch).asScala
     // Whether we wrote a control marker or a data batch, we can remove VerificationGuard since either the transaction is complete or we have a first offset.
     if (batch.isTransactional)
       producerStateManager.clearVerificationStateEntry(producerId)

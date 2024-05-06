@@ -50,7 +50,7 @@ import org.apache.kafka.common.replica._
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests._
-import org.apache.kafka.common.utils.Time
+import org.apache.kafka.common.utils.{ProducerIdAndEpoch, Time}
 import org.apache.kafka.common.{ElectionType, IsolationLevel, Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
@@ -753,7 +753,8 @@ class ReplicaManager(val config: KafkaConfig,
                     recordValidationStatsCallback: Map[TopicPartition, RecordValidationStats] => Unit = _ => (),
                     requestLocal: RequestLocal = RequestLocal.NoCaching,
                     actionQueue: ActionQueue = this.defaultActionQueue,
-                    verificationGuards: Map[TopicPartition, VerificationGuard] = Map.empty): Unit = {
+                    verificationGuards: Map[TopicPartition, VerificationGuard] = Map.empty,
+                    partitionBumpProducerIdAndEpoch: Map[TopicPartition, mutable.Map[Long, ProducerIdAndEpoch]] = Map.empty): Unit = {
     if (!isValidRequiredAcks(requiredAcks)) {
       sendInvalidRequiredAcksResponse(entriesPerPartition, responseCallback)
       return
@@ -761,7 +762,7 @@ class ReplicaManager(val config: KafkaConfig,
 
     val sTime = time.milliseconds
     val localProduceResults = appendToLocalLog(internalTopicsAllowed = internalTopicsAllowed,
-      origin, entriesPerPartition, requiredAcks, requestLocal, verificationGuards.toMap)
+      origin, entriesPerPartition, requiredAcks, requestLocal, verificationGuards.toMap, partitionBumpProducerIdAndEpoch.toMap)
     debug("Produce to local log in %d ms".format(time.milliseconds - sTime))
 
     val produceStatus = buildProducePartitionStatus(localProduceResults)
@@ -1367,7 +1368,8 @@ class ReplicaManager(val config: KafkaConfig,
                                entriesPerPartition: Map[TopicPartition, MemoryRecords],
                                requiredAcks: Short,
                                requestLocal: RequestLocal,
-                               verificationGuards: Map[TopicPartition, VerificationGuard]): Map[TopicPartition, LogAppendResult] = {
+                               verificationGuards: Map[TopicPartition, VerificationGuard],
+                               partitionBumpProducerIdAndEpoch: Map[TopicPartition, mutable.Map[Long, ProducerIdAndEpoch]]): Map[TopicPartition, LogAppendResult] = {
     val traceEnabled = isTraceEnabled
     def processFailedRecord(topicPartition: TopicPartition, t: Throwable) = {
       val logStartOffset = onlinePartition(topicPartition).map(_.logStartOffset).getOrElse(-1L)
@@ -1395,7 +1397,8 @@ class ReplicaManager(val config: KafkaConfig,
         try {
           val partition = getPartitionOrException(topicPartition)
           val info = partition.appendRecordsToLeader(records, origin, requiredAcks, requestLocal,
-            verificationGuards.getOrElse(topicPartition, VerificationGuard.SENTINEL))
+            verificationGuards.getOrElse(topicPartition, VerificationGuard.SENTINEL),
+            partitionBumpProducerIdAndEpoch.getOrElse(topicPartition, mutable.Map.empty[Long,ProducerIdAndEpoch]))
           val numAppendedMessages = info.numMessages
 
           // update stats for successfully appended bytes and messages as bytesInRate and messageInRate

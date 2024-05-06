@@ -25,6 +25,7 @@ import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.utils.ProducerIdAndEpoch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -114,6 +115,7 @@ public class ProducerAppendInfo {
                     "offset " + offset + " in partition " + topicPartition + ": " + appendFirstSeq +
                     " (incoming seq. number), " + verificationStateEntry.lowestSequence() + " (earliest seen sequence)");
         }
+        // TODO: 2024/4/28 这里会不会异常
         if (producerEpoch != updatedEntry.producerEpoch()) {
             if (appendFirstSeq != 0) {
                 if (updatedEntry.producerEpoch() != RecordBatch.NO_PRODUCER_EPOCH) {
@@ -145,13 +147,14 @@ public class ProducerAppendInfo {
         return nextSeq == lastSeq + 1L || (nextSeq == 0 && lastSeq == Integer.MAX_VALUE);
     }
 
-    public Optional<CompletedTxn> append(RecordBatch batch, Optional<LogOffsetMetadata> firstOffsetMetadataOpt) {
+    public Optional<CompletedTxn> append(RecordBatch batch, Optional<LogOffsetMetadata> firstOffsetMetadataOpt, ProducerIdAndEpoch bumpProducerIdAndEpoch) {
         if (batch.isControlBatch()) {
             Iterator<Record> recordIterator = batch.iterator();
             if (recordIterator.hasNext()) {
                 Record record = recordIterator.next();
                 EndTransactionMarker endTxnMarker = EndTransactionMarker.deserialize(record);
-                return appendEndTxnMarker(endTxnMarker, batch.producerEpoch(), batch.baseOffset(), record.timestamp());
+                return appendEndTxnMarker(endTxnMarker, batch.producerEpoch(), batch.baseOffset(), record.timestamp(),
+                        bumpProducerIdAndEpoch.producerId, bumpProducerIdAndEpoch.epoch);
             } else {
                 // An empty control batch means the entire transaction has been cleaned from the log, so no need to append
                 return Optional.empty();
@@ -204,7 +207,9 @@ public class ProducerAppendInfo {
             EndTransactionMarker endTxnMarker,
             short producerEpoch,
             long offset,
-            long timestamp) {
+            long timestamp,
+            long bumpProducerId,
+            short bumpEpoch) {
         checkProducerEpoch(producerEpoch, offset);
         checkCoordinatorEpoch(endTxnMarker, offset);
 
@@ -213,7 +218,7 @@ public class ProducerAppendInfo {
         // and would not need to be reflected in the transaction index.
         Optional<CompletedTxn> completedTxn = updatedEntry.currentTxnFirstOffset().isPresent() ?
                 Optional.of(new CompletedTxn(producerId, updatedEntry.currentTxnFirstOffset().getAsLong(), offset,
-                        endTxnMarker.controlType() == ControlRecordType.ABORT))
+                        endTxnMarker.controlType() == ControlRecordType.ABORT, bumpProducerId, bumpEpoch))
                 : Optional.empty();
         updatedEntry.update(producerEpoch, endTxnMarker.coordinatorEpoch(), timestamp);
         return completedTxn;

@@ -1547,8 +1547,19 @@ public class TransactionManager {
             long bumpProducerId = endTxnResponse.data().bumpProducerId();
             short bumpEpoch = endTxnResponse.data().bumpEpoch();
             if (error == Errors.NONE) {
-                completeTransaction(bumpProducerId, bumpEpoch);
-                result.done();
+                ProducerIdAndEpoch producerIdAndEpoch = TransactionManager.this.producerIdAndEpoch();
+                if (producerIdAndEpoch.epoch == bumpEpoch && producerIdAndEpoch.producerId == bumpProducerId) {
+                    completeTransaction();
+                    result.done();
+                } else if (bumpProducerId > producerIdAndEpoch.producerId || bumpEpoch > producerIdAndEpoch.epoch) {
+                    // TODO: 2024/4/28 verification is too simple
+                    ProducerIdAndEpoch bumpProducerIdAndEpoch = new ProducerIdAndEpoch(bumpProducerId, bumpEpoch);
+                    setProducerIdAndEpoch(bumpProducerIdAndEpoch);
+                    completeTransaction();
+                    result.done();
+                } else {
+                    fatalError(new KafkaException("Unhandled error in EndTxnResponse:epoch mismatch"));
+                }
             } else if (error == Errors.COORDINATOR_NOT_AVAILABLE || error == Errors.NOT_COORDINATOR) {
                 lookupCoordinator(FindCoordinatorRequest.CoordinatorType.TRANSACTION, transactionalId);
                 reenqueue();

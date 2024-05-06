@@ -40,6 +40,7 @@ import org.apache.kafka.common.record.FileRecords.LogOffsetPosition;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.utils.BufferSupplier;
+import org.apache.kafka.common.utils.ProducerIdAndEpoch;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
@@ -350,7 +351,7 @@ public class LogSegment implements Closeable {
         if (batch.hasProducerId()) {
             long producerId = batch.producerId();
             ProducerAppendInfo appendInfo = producerStateManager.prepareUpdate(producerId, AppendOrigin.REPLICATION);
-            Optional<CompletedTxn> maybeCompletedTxn = appendInfo.append(batch, Optional.empty());
+            Optional<CompletedTxn> maybeCompletedTxn = appendInfo.append(batch, Optional.empty(), ProducerIdAndEpoch.NONE);
             producerStateManager.update(appendInfo);
             if (maybeCompletedTxn.isPresent()) {
                 CompletedTxn completedTxn = maybeCompletedTxn.get();

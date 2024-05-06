@@ -19,7 +19,9 @@
   "listeners": ["zkBroker", "broker"],
   "name": "WriteTxnMarkersRequest",
   // Version 1 enables flexible versions.
-  "validVersions": "0-1",
+  //
+  // Version 2 enables flexible versions.
+  "validVersions": "0-2",
   "flexibleVersions": "1+",
   "fields": [
     { "name": "Markers", "type": "[]WritableTxnMarker", "versions": "0+",
@@ -28,9 +30,9 @@
         "about": "The current producer ID."},
       { "name": "ProducerEpoch", "type": "int16", "versions": "0+",
         "about": "The current epoch associated with the producer ID." },
-      { "name": "BumpProducerId", "type": "int16", "versions": "1+",
+      { "name": "BumpProducerId", "type": "int16", "versions": "2+",
         "about": "The next epoch associated with the producer ID." },
-      { "name": "BumpEpoch", "type": "int16", "versions": "1+",
+      { "name": "BumpEpoch", "type": "int16", "versions": "2+",
         "about": "The next epoch associated with the producer ID." },
       { "name": "TransactionResult", "type": "bool", "versions": "0+",
         "about": "The result of the transaction to write to the partitions (false = ABORT, true = COMMIT)." },

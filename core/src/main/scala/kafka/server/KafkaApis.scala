@@ -2461,6 +2461,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
 
         val controlRecords = mutable.Map.empty[TopicPartition, MemoryRecords]
+        val partitionBumpProducerIdAndEpoch = mutable.Map.empty[TopicPartition, mutable.Map[Long, ProducerIdAndEpoch]]
         partitionsWithCompatibleMessageFormat.foreach { partition =>
           if (config.isNewGroupCoordinatorEnabled && partition.topic == GROUP_METADATA_TOPIC_NAME) {
             // When the new group coordinator is used, writing the end marker is fully delegated
@@ -2496,6 +2497,13 @@ class KafkaApis(val requestChannel: RequestChannel,
               marker.producerEpoch,
               new EndTransactionMarker(controlRecordType, marker.coordinatorEpoch)
             )
+
+            if (writeTxnMarkersRequest.version() > 1) {
+              marker.partitions()
+              val bumpProducerId = marker.bumpProducerId()
+              val bumpProducerEpoch = marker.bumpProducerEpoch()
+              partitionBumpProducerIdAndEpoch += partition -> (producerId -> new ProducerIdAndEpoch(bumpProducerId, bumpProducerEpoch))
+            }
           }
         }
 
@@ -2511,7 +2519,8 @@ class KafkaApis(val requestChannel: RequestChannel,
               markerResults.put(tp, partitionResponse.error)
             }
             maybeComplete()
-          }
+          },
+          partitionBumpProducerIdAndEpoch = partitionBumpProducerIdAndEpoch
         )
       }
     }
