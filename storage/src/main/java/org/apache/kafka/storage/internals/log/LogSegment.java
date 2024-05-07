@@ -351,7 +351,7 @@ public class LogSegment implements Closeable {
         if (batch.hasProducerId()) {
             long producerId = batch.producerId();
             ProducerAppendInfo appendInfo = producerStateManager.prepareUpdate(producerId, AppendOrigin.REPLICATION);
-            Optional<CompletedTxn> maybeCompletedTxn = appendInfo.append(batch, Optional.empty(), ProducerIdAndEpoch.NONE);
+            Optional<CompletedTxn> maybeCompletedTxn = appendInfo.append(batch, Optional.empty());
             producerStateManager.update(appendInfo);
             if (maybeCompletedTxn.isPresent()) {
                 CompletedTxn completedTxn = maybeCompletedTxn.get();

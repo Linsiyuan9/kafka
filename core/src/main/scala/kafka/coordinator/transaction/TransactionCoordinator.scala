@@ -168,9 +168,9 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
         case Right((coordinatorEpoch, newMetadata)) =>
           if (newMetadata.txnState == PrepareEpochFence) {
             // abort the ongoing transaction and then return CONCURRENT_TRANSACTIONS to let client wait and retry
-            def sendRetriableErrorCallback(error: Errors): Unit = {
-              if (error != Errors.NONE) {
-                responseCallback(initTransactionError(error))
+            def sendRetriableErrorCallback(endTxnResult: EndTxnResult): Unit = {
+              if (endTxnResult.error != Errors.NONE) {
+                responseCallback(initTransactionError(endTxnResult.error))
               } else {
                 responseCallback(initTransactionError(Errors.CONCURRENT_TRANSACTIONS))
               }
@@ -698,8 +698,8 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
 
   def partitionFor(transactionalId: String): Int = txnManager.partitionFor(transactionalId)
 
-  private def onEndTransactionComplete(txnIdAndPidEpoch: TransactionalIdAndProducerIdEpoch)(error: Errors): Unit = {
-    error match {
+  private def onEndTransactionComplete(txnIdAndPidEpoch: TransactionalIdAndProducerIdEpoch)(endTxnResult: EndTxnResult): Unit = {
+    endTxnResult.error match {
       case Errors.NONE =>
         info("Completed rollback of ongoing transaction for transactionalId " +
           s"${txnIdAndPidEpoch.transactionalId} due to timeout")
