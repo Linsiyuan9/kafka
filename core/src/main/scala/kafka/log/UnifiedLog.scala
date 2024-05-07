@@ -742,7 +742,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       verificationGuard = VerificationGuard.SENTINEL,
       // disable to check the validation of record size since the record is already accepted by leader.
       ignoreRecordSize = true,
-      partitionBumpProducerIdAndEpoch = ProducerIdAndEpoch.NONE)
+      partitionBumpProducerIdAndEpoch = mutable.Map.empty)
   }
 
   /**
@@ -2091,8 +2091,8 @@ object UnifiedLog extends Logging {
                               origin: AppendOrigin,
                               bumpProducerIdAndEpoch: ProducerIdAndEpoch = ProducerIdAndEpoch.NONE): Option[CompletedTxn] = {
     val producerId = batch.producerId
-    val appendInfo = producers.getOrElseUpdate(producerId, producerStateManager.prepareUpdate(producerId, origin))
-    val completedTxn = appendInfo.append(batch, firstOffsetMetadata.asJava, bumpProducerIdAndEpoch).asScala
+    val appendInfo = producers.getOrElseUpdate(producerId, producerStateManager.prepareUpdate(producerId, origin, bumpProducerIdAndEpoch))
+    val completedTxn = appendInfo.append(batch, firstOffsetMetadata.asJava).asScala
     // Whether we wrote a control marker or a data batch, we can remove VerificationGuard since either the transaction is complete or we have a first offset.
     if (batch.isTransactional)
       producerStateManager.clearVerificationStateEntry(producerId)

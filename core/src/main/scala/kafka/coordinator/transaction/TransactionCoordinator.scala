@@ -628,7 +628,7 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
                                     case Failure(exception) =>
                                       Left(Errors.forException(exception))
                                     case Success(newProducerId) =>
-                                      Right(txnMetadata, txnMetadata.prepareComplete(time.milliseconds(), newProducerId, txnMetadata.nextProducerEpoch))
+                                      Right(txnMetadata, txnMetadata.prepareComplete(time.milliseconds(), newProducerId, 0))
                                   }
                                 } else {
                                   Right(txnMetadata, txnMetadata.prepareComplete(time.milliseconds(), txnMetadata.producerId, txnMetadata.nextProducerEpoch))

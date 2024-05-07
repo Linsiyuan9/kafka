@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 
@@ -52,6 +53,15 @@ public class ProducerAppendInfo {
 
     private final List<TxnMetadata> transactions = new ArrayList<>();
     private final ProducerStateEntry updatedEntry;
+    private final ProducerIdAndEpoch bumpProducerIdAndEpoch;
+
+    public ProducerAppendInfo(TopicPartition topicPartition,
+                              long producerId,
+                              ProducerStateEntry currentEntry,
+                              AppendOrigin origin,
+                              VerificationStateEntry verificationStateEntry) {
+        this(topicPartition, producerId, currentEntry, origin, verificationStateEntry, ProducerIdAndEpoch.NONE);
+    }
 
     /**
      * Creates a new instance with the provided parameters.
@@ -67,19 +77,28 @@ public class ProducerAppendInfo {
      *                               only producer epoch validation is done. Appends which come through replication are not validated
      *                               (we assume the validation has already been done) and appends from clients require full validation.
      * @param verificationStateEntry The most recent entry used for verification if no append has been completed yet otherwise null
+     * @param bumpProducerIdAndEpoch bump
      */
     public ProducerAppendInfo(TopicPartition topicPartition,
                               long producerId,
                               ProducerStateEntry currentEntry,
                               AppendOrigin origin,
-                              VerificationStateEntry verificationStateEntry) {
+                              VerificationStateEntry verificationStateEntry,
+                              ProducerIdAndEpoch bumpProducerIdAndEpoch) {
         this.topicPartition = topicPartition;
         this.producerId = producerId;
         this.currentEntry = currentEntry;
         this.origin = origin;
         this.verificationStateEntry = verificationStateEntry;
+        this.bumpProducerIdAndEpoch = bumpProducerIdAndEpoch;
 
-        updatedEntry = currentEntry.withProducerIdAndBatchMetadata(producerId, Optional.empty());
+        if (Objects.equals(bumpProducerIdAndEpoch, ProducerIdAndEpoch.NONE) &&
+                bumpProducerIdAndEpoch.producerId == currentEntry.producerId() &&
+                bumpProducerIdAndEpoch.epoch == currentEntry.producerEpoch()) {
+            updatedEntry = currentEntry.withProducerIdAndBatchMetadata(producerId, Optional.empty());
+        } else {
+            updatedEntry = currentEntry.withProducerIdAndBatchMetadata(bumpProducerIdAndEpoch.producerId, bumpProducerIdAndEpoch.epoch, Optional.empty());
+        }
     }
 
     public long producerId() {
@@ -147,14 +166,13 @@ public class ProducerAppendInfo {
         return nextSeq == lastSeq + 1L || (nextSeq == 0 && lastSeq == Integer.MAX_VALUE);
     }
 
-    public Optional<CompletedTxn> append(RecordBatch batch, Optional<LogOffsetMetadata> firstOffsetMetadataOpt, ProducerIdAndEpoch bumpProducerIdAndEpoch) {
+    public Optional<CompletedTxn> append(RecordBatch batch, Optional<LogOffsetMetadata> firstOffsetMetadataOpt) {
         if (batch.isControlBatch()) {
             Iterator<Record> recordIterator = batch.iterator();
             if (recordIterator.hasNext()) {
                 Record record = recordIterator.next();
                 EndTransactionMarker endTxnMarker = EndTransactionMarker.deserialize(record);
-                return appendEndTxnMarker(endTxnMarker, batch.producerEpoch(), batch.baseOffset(), record.timestamp(),
-                        bumpProducerIdAndEpoch.producerId, bumpProducerIdAndEpoch.epoch);
+                return appendEndTxnMarker(endTxnMarker, batch.producerEpoch(), batch.baseOffset(), record.timestamp());
             } else {
                 // An empty control batch means the entire transaction has been cleaned from the log, so no need to append
                 return Optional.empty();
@@ -207,9 +225,7 @@ public class ProducerAppendInfo {
             EndTransactionMarker endTxnMarker,
             short producerEpoch,
             long offset,
-            long timestamp,
-            long bumpProducerId,
-            short bumpEpoch) {
+            long timestamp) {
         checkProducerEpoch(producerEpoch, offset);
         checkCoordinatorEpoch(endTxnMarker, offset);
 
@@ -218,7 +234,7 @@ public class ProducerAppendInfo {
         // and would not need to be reflected in the transaction index.
         Optional<CompletedTxn> completedTxn = updatedEntry.currentTxnFirstOffset().isPresent() ?
                 Optional.of(new CompletedTxn(producerId, updatedEntry.currentTxnFirstOffset().getAsLong(), offset,
-                        endTxnMarker.controlType() == ControlRecordType.ABORT, bumpProducerId, bumpEpoch))
+                        endTxnMarker.controlType() == ControlRecordType.ABORT))
                 : Optional.empty();
         updatedEntry.update(producerEpoch, endTxnMarker.coordinatorEpoch(), timestamp);
         return completedTxn;

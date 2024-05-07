@@ -23,6 +23,7 @@ import org.apache.kafka.common.message.WriteTxnMarkersRequestData.WritableTxnMar
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.utils.ProducerIdAndEpoch;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -42,6 +43,13 @@ public class WriteTxnMarkersRequest extends AbstractRequest {
         private final TransactionResult result;
         private final List<TopicPartition> partitions;
 
+        public TxnMarkerEntry(long producerId,
+                              short producerEpoch,
+                              int coordinatorEpoch,
+                              TransactionResult result,
+                              List<TopicPartition> partitions) {
+            this(producerId, producerEpoch, ProducerIdAndEpoch.NONE.producerId, ProducerIdAndEpoch.NONE.epoch, coordinatorEpoch, result, partitions);
+        }
         public TxnMarkerEntry(long producerId,
                               short producerEpoch,
                               long bumpProducerId,
@@ -89,12 +97,12 @@ public class WriteTxnMarkersRequest extends AbstractRequest {
         @Override
         public String toString() {
             return "TxnMarkerEntry{" +
-                       "producerId=" + producerId +
-                       ", producerEpoch=" + producerEpoch +
-                       ", coordinatorEpoch=" + coordinatorEpoch +
-                       ", result=" + result +
-                       ", partitions=" + partitions +
-                       '}';
+                    "producerId=" + producerId +
+                    ", producerEpoch=" + producerEpoch +
+                    ", coordinatorEpoch=" + coordinatorEpoch +
+                    ", result=" + result +
+                    ", partitions=" + partitions +
+                    '}';
         }
 
         @Override
@@ -103,10 +111,10 @@ public class WriteTxnMarkersRequest extends AbstractRequest {
             if (o == null || getClass() != o.getClass()) return false;
             final TxnMarkerEntry that = (TxnMarkerEntry) o;
             return producerId == that.producerId &&
-                       producerEpoch == that.producerEpoch &&
-                       coordinatorEpoch == that.coordinatorEpoch &&
-                       result == that.result &&
-                       Objects.equals(partitions, that.partitions);
+                    producerEpoch == that.producerEpoch &&
+                    coordinatorEpoch == that.coordinatorEpoch &&
+                    result == that.result &&
+                    Objects.equals(partitions, that.partitions);
         }
 
         @Override
@@ -131,18 +139,20 @@ public class WriteTxnMarkersRequest extends AbstractRequest {
                 final Map<String, WritableTxnMarkerTopic> topicMap = new HashMap<>();
                 for (TopicPartition topicPartition : marker.partitions) {
                     WritableTxnMarkerTopic topic = topicMap.getOrDefault(topicPartition.topic(),
-                                                                         new WritableTxnMarkerTopic()
-                                                                             .setName(topicPartition.topic()));
+                            new WritableTxnMarkerTopic()
+                                    .setName(topicPartition.topic()));
                     topic.partitionIndexes().add(topicPartition.partition());
                     topicMap.put(topicPartition.topic(), topic);
                 }
 
                 dataMarkers.add(new WritableTxnMarker()
-                                    .setProducerId(marker.producerId)
-                                    .setProducerEpoch(marker.producerEpoch)
-                                    .setCoordinatorEpoch(marker.coordinatorEpoch)
-                                    .setTransactionResult(marker.transactionResult().id)
-                                    .setTopics(new ArrayList<>(topicMap.values())));
+                        .setProducerId(marker.producerId)
+                        .setProducerEpoch(marker.producerEpoch)
+                        .setBumpProducerId(marker.bumpProducerId)
+                        .setBumpEpoch(marker.bumpProducerEpoch)
+                        .setCoordinatorEpoch(marker.coordinatorEpoch)
+                        .setTransactionResult(marker.transactionResult().id)
+                        .setTopics(new ArrayList<>(topicMap.values())));
             }
             this.data = new WriteTxnMarkersRequestData().setMarkers(dataMarkers);
         }
@@ -193,11 +203,13 @@ public class WriteTxnMarkersRequest extends AbstractRequest {
                 }
             }
             markers.add(new TxnMarkerEntry(
-                markerEntry.producerId(),
-                markerEntry.producerEpoch(),
-                markerEntry.coordinatorEpoch(),
-                TransactionResult.forId(markerEntry.transactionResult()),
-                topicPartitions)
+                    markerEntry.producerId(),
+                    markerEntry.producerEpoch(),
+                    markerEntry.bumpProducerId(),
+                    markerEntry.bumpEpoch(),
+                    markerEntry.coordinatorEpoch(),
+                    TransactionResult.forId(markerEntry.transactionResult()),
+                    topicPartitions)
             );
         }
         return markers;

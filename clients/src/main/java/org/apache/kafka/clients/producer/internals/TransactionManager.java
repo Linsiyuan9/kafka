@@ -1548,17 +1548,19 @@ public class TransactionManager {
             short bumpEpoch = endTxnResponse.data().bumpEpoch();
             if (error == Errors.NONE) {
                 ProducerIdAndEpoch producerIdAndEpoch = TransactionManager.this.producerIdAndEpoch();
-                if (producerIdAndEpoch.epoch == bumpEpoch && producerIdAndEpoch.producerId == bumpProducerId) {
-                    completeTransaction();
-                    result.done();
-                } else if (bumpProducerId > producerIdAndEpoch.producerId || bumpEpoch > producerIdAndEpoch.epoch) {
-                    // TODO: 2024/4/28 verification is too simple
-                    ProducerIdAndEpoch bumpProducerIdAndEpoch = new ProducerIdAndEpoch(bumpProducerId, bumpEpoch);
-                    setProducerIdAndEpoch(bumpProducerIdAndEpoch);
-                    completeTransaction();
-                    result.done();
+                if (bumpProducerId != ProducerIdAndEpoch.NONE.producerId &&
+                        bumpEpoch != ProducerIdAndEpoch.NONE.epoch) {
+                    if (bumpEpoch == producerIdAndEpoch.epoch + 1 || (bumpEpoch == 0 && bumpProducerId != producerIdAndEpoch.producerId)) {
+                        ProducerIdAndEpoch bumpProducerIdAndEpoch = new ProducerIdAndEpoch(bumpProducerId, bumpEpoch);
+                        setProducerIdAndEpoch(bumpProducerIdAndEpoch);
+                        completeTransaction();
+                        result.done();
+                    } else {
+                        fatalError(new KafkaException("Unhandled error in EndTxnResponse:epoch mismatch"));
+                    }
                 } else {
-                    fatalError(new KafkaException("Unhandled error in EndTxnResponse:epoch mismatch"));
+                    completeTransaction();
+                    result.done();
                 }
             } else if (error == Errors.COORDINATOR_NOT_AVAILABLE || error == Errors.NOT_COORDINATOR) {
                 lookupCoordinator(FindCoordinatorRequest.CoordinatorType.TRANSACTION, transactionalId);

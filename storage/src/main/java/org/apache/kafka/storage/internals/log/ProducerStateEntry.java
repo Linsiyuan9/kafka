@@ -84,8 +84,12 @@ public class ProducerStateEntry {
      * otherwise.
      */
     public ProducerStateEntry withProducerIdAndBatchMetadata(long producerId, Optional<BatchMetadata> batchMetadata) {
-        return new ProducerStateEntry(producerId, this.producerEpoch(), this.coordinatorEpoch, this.lastTimestamp,
-            this.currentTxnFirstOffset, batchMetadata);
+        return withProducerIdAndBatchMetadata(producerId, this.producerEpoch(), batchMetadata);
+    }
+
+    public ProducerStateEntry withProducerIdAndBatchMetadata(long producerId, short producerEpoch, Optional<BatchMetadata> batchMetadata) {
+        return new ProducerStateEntry(producerId, producerEpoch, this.coordinatorEpoch, this.lastTimestamp,
+                this.currentTxnFirstOffset, batchMetadata);
     }
 
     public void addBatch(short producerEpoch, int lastSeq, long lastOffset, int offsetDelta, long timestamp) {

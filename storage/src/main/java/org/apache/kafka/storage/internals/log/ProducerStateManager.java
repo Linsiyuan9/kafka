@@ -27,6 +27,7 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.utils.ByteUtils;
 import org.apache.kafka.common.utils.Crc32C;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.ProducerIdAndEpoch;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 
@@ -413,8 +414,12 @@ public class ProducerStateManager {
     }
 
     public ProducerAppendInfo prepareUpdate(long producerId, AppendOrigin origin) {
+        return this.prepareUpdate(producerId, origin, ProducerIdAndEpoch.NONE);
+    }
+
+    public ProducerAppendInfo prepareUpdate(long producerId, AppendOrigin origin, ProducerIdAndEpoch bumpProducerIdAndEpoch) {
         ProducerStateEntry currentEntry = lastEntry(producerId).orElse(ProducerStateEntry.empty(producerId));
-        return new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin, verificationStateEntry(producerId));
+        return new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin, verificationStateEntry(producerId), bumpProducerIdAndEpoch);
     }
 
     /**
@@ -428,10 +433,11 @@ public class ProducerStateManager {
         log.trace("Updated producer {} state to {}", appendInfo.producerId(), appendInfo);
         ProducerStateEntry updatedEntry = appendInfo.toEntry();
         ProducerStateEntry currentEntry = producers.get(appendInfo.producerId());
-        if (currentEntry != null) {
+        if (currentEntry != null && updatedEntry.producerId() == currentEntry.producerId() && updatedEntry.producerEpoch() == currentEntry.producerEpoch()) {
             currentEntry.update(updatedEntry);
         } else {
-            addProducerId(appendInfo.producerId(), updatedEntry);
+            addProducerId(updatedEntry.producerId(), updatedEntry);
+            removeProducerIds(Collections.singletonList(appendInfo.producerId()));
         }
 
         appendInfo.startedTransactions().forEach(txn -> ongoingTxns.put(txn.firstOffset.messageOffset, txn));

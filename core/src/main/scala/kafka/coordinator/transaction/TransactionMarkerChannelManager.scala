@@ -28,6 +28,7 @@ import org.apache.kafka.clients._
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network._
 import org.apache.kafka.common.protocol.Errors
+import org.apache.kafka.common.record.RecordBatch
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry
 import org.apache.kafka.common.requests.{TransactionResult, WriteTxnMarkersRequest}
 import org.apache.kafka.common.security.JaasContext
@@ -243,11 +244,13 @@ class TransactionMarkerChannelManager(
     for (pendingCompleteTxnAndMarker: PendingCompleteTxnAndMarkerEntry <- pendingCompleteTxnAndMarkerEntries.asScala) {
       val producerId = pendingCompleteTxnAndMarker.txnMarkerEntry.producerId
       val producerEpoch = pendingCompleteTxnAndMarker.txnMarkerEntry.producerEpoch
+      val bumpProducerId = pendingCompleteTxnAndMarker.txnMarkerEntry.bumpProducerId()
+      val bumpProducerEpoch = pendingCompleteTxnAndMarker.txnMarkerEntry.bumpProducerEpoch()
       val txnResult = pendingCompleteTxnAndMarker.txnMarkerEntry.transactionResult
       val pendingCompleteTxn = pendingCompleteTxnAndMarker.pendingCompleteTxn
       val topicPartitions = pendingCompleteTxnAndMarker.txnMarkerEntry.partitions.asScala.toSet
 
-      addTxnMarkersToBrokerQueue(producerId, producerEpoch, txnResult, pendingCompleteTxn, topicPartitions)
+      addTxnMarkersToBrokerQueue(producerId, producerEpoch, txnResult, pendingCompleteTxn, topicPartitions, bumpProducerId, bumpProducerEpoch)
     }
 
     val currentTimeMs = time.milliseconds()
@@ -384,7 +387,9 @@ class TransactionMarkerChannelManager(
                                  producerEpoch: Short,
                                  result: TransactionResult,
                                  pendingCompleteTxn: PendingCompleteTxn,
-                                 topicPartitions: immutable.Set[TopicPartition]): Unit = {
+                                 topicPartitions: immutable.Set[TopicPartition],
+                                 bumpProducerId: Long = RecordBatch.NO_PRODUCER_ID,
+                                 bumpProducerEpoch: Short = RecordBatch.NO_PRODUCER_EPOCH): Unit = {
     val txnTopicPartition = txnStateManager.partitionFor(pendingCompleteTxn.transactionalId)
     val partitionsByDestination: immutable.Map[Option[Node], immutable.Set[TopicPartition]] = topicPartitions.groupBy { topicPartition: TopicPartition =>
       metadataCache.getPartitionLeaderEndpoint(topicPartition.topic, topicPartition.partition, interBrokerListenerName)
@@ -394,7 +399,7 @@ class TransactionMarkerChannelManager(
     for ((broker: Option[Node], topicPartitions: immutable.Set[TopicPartition]) <- partitionsByDestination) {
       broker match {
         case Some(brokerNode) =>
-          val marker = new TxnMarkerEntry(producerId, producerEpoch, coordinatorEpoch, result, topicPartitions.toList.asJava)
+          val marker = new TxnMarkerEntry(producerId, producerEpoch, bumpProducerId, bumpProducerEpoch, coordinatorEpoch, result, topicPartitions.toList.asJava)
           val pendingCompleteTxnAndMarker = PendingCompleteTxnAndMarkerEntry(pendingCompleteTxn, marker)
 
           if (brokerNode == Node.noNode) {

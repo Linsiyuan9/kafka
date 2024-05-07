@@ -462,13 +462,18 @@ private[transaction] class TransactionMetadata(val transactionalId: String,
           }
 
         case CompleteAbort | CompleteCommit => // from write markers
-          if (!validProducerEpoch(transitMetadata) ||
+          if (!(validProducerEpoch(transitMetadata) || validProducerEpochBump(transitMetadata)) ||
             txnTimeoutMs != transitMetadata.txnTimeoutMs ||
             transitMetadata.txnStartTimestamp == -1) {
 
             throwStateTransitionFailure(transitMetadata)
           } else {
-            txnStartTimestamp = transitMetadata.txnStartTimestamp
+            //epoch bump after transaction
+            producerEpoch = transitMetadata.producerEpoch
+            lastProducerEpoch = transitMetadata.lastProducerEpoch
+            producerId = transitMetadata.producerId
+            lastProducerId = transitMetadata.lastProducerId
+
             topicPartitions.clear()
           }
 
