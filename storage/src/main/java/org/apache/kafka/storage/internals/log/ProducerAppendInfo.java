@@ -92,9 +92,8 @@ public class ProducerAppendInfo {
         this.verificationStateEntry = verificationStateEntry;
         this.bumpProducerIdAndEpoch = bumpProducerIdAndEpoch;
 
-        if (Objects.equals(bumpProducerIdAndEpoch, ProducerIdAndEpoch.NONE) &&
-                bumpProducerIdAndEpoch.producerId == currentEntry.producerId() &&
-                bumpProducerIdAndEpoch.epoch == currentEntry.producerEpoch()) {
+        if (Objects.equals(bumpProducerIdAndEpoch, ProducerIdAndEpoch.NONE) ||
+                (bumpProducerIdAndEpoch.producerId == currentEntry.producerId() && bumpProducerIdAndEpoch.epoch == currentEntry.producerEpoch())) {
             updatedEntry = currentEntry.withProducerIdAndBatchMetadata(producerId, Optional.empty());
         } else {
             updatedEntry = currentEntry.withProducerIdAndBatchMetadata(bumpProducerIdAndEpoch.producerId, bumpProducerIdAndEpoch.epoch, Optional.empty());

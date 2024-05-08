@@ -94,11 +94,14 @@ public class WriteTxnMarkersRequest extends AbstractRequest {
             return partitions;
         }
 
+
         @Override
         public String toString() {
             return "TxnMarkerEntry{" +
                     "producerId=" + producerId +
                     ", producerEpoch=" + producerEpoch +
+                    ", bumpProducerId=" + bumpProducerId +
+                    ", bumpProducerEpoch=" + bumpProducerEpoch +
                     ", coordinatorEpoch=" + coordinatorEpoch +
                     ", result=" + result +
                     ", partitions=" + partitions +

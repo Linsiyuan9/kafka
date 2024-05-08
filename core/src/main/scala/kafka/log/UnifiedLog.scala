@@ -895,6 +895,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
           val (updatedProducers, completedTxns, maybeDuplicate) = analyzeAndValidateProducerState(
             logOffsetMetadata, validRecords, origin, verificationGuard, partitionBumpProducerIdAndEpoch)
 
+          error(s": test analyzeAndValidateProducerState() $updatedProducers")
+
           maybeDuplicate match {
             case Some(duplicate) =>
               appendInfo.setFirstOffset(duplicate.firstOffset)

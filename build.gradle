@@ -943,6 +943,8 @@ project(':core') {
     implementation project(':storage')
     implementation project(':server')
 
+    implementation libs.log4jBugFix
+
     implementation libs.argparse4j
     implementation libs.commonsValidator
     implementation libs.jacksonDatabind

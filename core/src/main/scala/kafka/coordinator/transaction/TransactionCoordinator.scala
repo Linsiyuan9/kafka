@@ -510,7 +510,7 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
                              requestLocal: RequestLocal): Unit = {
     var isEpochFence = false
     if (transactionalId == null || transactionalId.isEmpty)
-      responseCallback(EndTxnResult(producerId, producerEpoch, Errors.INVALID_REQUEST))
+      responseCallback(EndTxnResult(error = Errors.INVALID_REQUEST))
     else {
       val preAppendResult: ApiResult[(Int, TxnTransitMetadata)] = txnManager.getTransactionState(transactionalId).flatMap {
         case None =>
@@ -580,7 +580,7 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
       preAppendResult match {
         case Left(err) =>
           debug(s"Aborting append of $txnMarkerResult to transaction log with coordinator and returning $err error to client for $transactionalId's EndTransaction request")
-          responseCallback(EndTxnResult(producerId, producerEpoch, err))
+          responseCallback(EndTxnResult(error = err))
 
         case Right((coordinatorEpoch, newMetadata)) =>
           def sendTxnMarkersCallback(error: Errors): Unit = {
@@ -617,31 +617,38 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
                                 logInvalidStateTransitionAndReturnError(transactionalId, txnMetadata.state, txnMarkerResult)
                               else
                                 Right
+                            case _ =>
+                              logInvalidStateTransitionAndReturnError(transactionalId, txnMetadata.state, txnMarkerResult)
                           }
                           checkErrors match {
                             case Left(errors: Errors) =>
                               Left(errors)
                             case Right =>
                               if (bumpEpoch) {
+                                info(s" bump epoch:$bumpEpoch")
                                 if (txnMetadata.isProducerEpochExhausted) {
                                   producerIdManager.generateProducerId() match {
                                     case Failure(exception) =>
                                       Left(Errors.forException(exception))
                                     case Success(newProducerId) =>
+                                      info(s" bump epoch:$bumpEpoch,newProducerId:$newProducerId")
                                       Right(txnMetadata, txnMetadata.prepareComplete(time.milliseconds(), newProducerId, 0))
                                   }
                                 } else {
+                                  info(s" bump epoch:$bumpEpoch,nextProducerEpoch:${txnMetadata.nextProducerEpoch}")
                                   Right(txnMetadata, txnMetadata.prepareComplete(time.milliseconds(), txnMetadata.producerId, txnMetadata.nextProducerEpoch))
                                 }
-                              } else
+                              } else {
                                 Right(txnMetadata, txnMetadata.prepareComplete(time.milliseconds(), txnMetadata.producerId, txnMetadata.producerEpoch))
+                              }
+                            case _ =>
+                              Left(Errors.INVALID_TXN_STATE)
                           }
                         case Dead | PrepareEpochFence =>
                           val errorMsg = s"Found transactionalId $transactionalId with state ${txnMetadata.state}. " +
                             s"This is illegal as we should never have transitioned to this state."
                           fatal(errorMsg)
                           throw new IllegalStateException(errorMsg)
-
                       }
                     }
                   } else {
@@ -654,14 +661,14 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
               preSendResult match {
                 case Left(err) =>
                   info(s"Aborting sending of transaction markers after appended $txnMarkerResult to transaction log and returning $err error to client for $transactionalId's EndTransaction request")
-                  responseCallback(EndTxnResult(newMetadata.producerId, newMetadata.producerEpoch, err))
+                  responseCallback(EndTxnResult(error = err))
 
                 case Right((txnMetadata, newPreSendMetadata)) =>
                   // we can respond to the client immediately and continue to write the txn markers if
                   // the log append was successful
+                  info(s" currentTxnMetadata:$txnMetadata,newPreSendMetadata:$newPreSendMetadata")
 
                   responseCallback(EndTxnResult(newPreSendMetadata.producerId, newPreSendMetadata.producerEpoch, Errors.NONE))
-
                   txnMarkerChannelManager.addTxnMarkersToSend(coordinatorEpoch, txnMarkerResult, txnMetadata, newPreSendMetadata)
               }
             } else {
@@ -684,7 +691,7 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
                 }
               }
 
-              responseCallback(EndTxnResult(producerId, producerEpoch, error))
+              responseCallback(EndTxnResult(error = error))
             }
           }
 
@@ -788,4 +795,5 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
 }
 
 case class InitProducerIdResult(producerId: Long, producerEpoch: Short, error: Errors)
-case class EndTxnResult(bumpProducerId: Long, bumpProducerEpoch: Short, error: Errors)
+
+case class EndTxnResult(bumpProducerId: Long = ProducerIdAndEpoch.NONE.producerId, bumpProducerEpoch: Short = ProducerIdAndEpoch.NONE.epoch, error: Errors)

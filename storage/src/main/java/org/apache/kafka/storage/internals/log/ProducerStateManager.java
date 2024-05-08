@@ -434,8 +434,10 @@ public class ProducerStateManager {
         ProducerStateEntry updatedEntry = appendInfo.toEntry();
         ProducerStateEntry currentEntry = producers.get(appendInfo.producerId());
         if (currentEntry != null && updatedEntry.producerId() == currentEntry.producerId() && updatedEntry.producerEpoch() == currentEntry.producerEpoch()) {
+            log.error("bump epoch:" + updatedEntry + ",current:" + currentEntry);
             currentEntry.update(updatedEntry);
         } else {
+            log.error("bump epoch:" + updatedEntry + ",current:" + currentEntry);
             addProducerId(updatedEntry.producerId(), updatedEntry);
             removeProducerIds(Collections.singletonList(appendInfo.producerId()));
         }

@@ -2499,13 +2499,16 @@ class KafkaApis(val requestChannel: RequestChannel,
             )
 
             if (writeTxnMarkersRequest.version() > 1) {
-              marker.partitions()
               val bumpProducerId = marker.bumpProducerId()
               val bumpProducerEpoch = marker.bumpProducerEpoch()
-              partitionBumpProducerIdAndEpoch += partition -> (producerId -> new ProducerIdAndEpoch(bumpProducerId, bumpProducerEpoch))
+              val bumpProducerIdAndEpoch = new ProducerIdAndEpoch(bumpProducerId, bumpProducerEpoch)
+              if (!ProducerIdAndEpoch.NONE.equals(bumpProducerIdAndEpoch))
+                partitionBumpProducerIdAndEpoch.getOrElse(partition, mutable.Map.empty).put(producerId, bumpProducerIdAndEpoch)
             }
           }
         }
+
+        error(s": handleWriteTxnMarkersRequest() ${partitionBumpProducerIdAndEpoch}")
 
         replicaManager.appendRecords(
           timeout = config.requestTimeoutMs.toLong,

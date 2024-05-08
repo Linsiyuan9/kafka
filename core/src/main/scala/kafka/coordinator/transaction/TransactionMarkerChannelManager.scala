@@ -28,11 +28,10 @@ import org.apache.kafka.clients._
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network._
 import org.apache.kafka.common.protocol.Errors
-import org.apache.kafka.common.record.RecordBatch
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry
 import org.apache.kafka.common.requests.{TransactionResult, WriteTxnMarkersRequest}
 import org.apache.kafka.common.security.JaasContext
-import org.apache.kafka.common.utils.{LogContext, Time}
+import org.apache.kafka.common.utils.{LogContext, ProducerIdAndEpoch, Time}
 import org.apache.kafka.common.{Node, Reconfigurable, TopicPartition}
 import org.apache.kafka.server.common.MetadataVersion.IBP_2_8_IV0
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
@@ -264,6 +263,7 @@ class TransactionMarkerChannelManager(
       val markersToSend = entries.asScala.map(_.txnMarkerEntry).asJava
       val requestCompletionHandler = new TransactionMarkerRequestCompletionHandler(node.id, txnStateManager, this, entries)
       val request = new WriteTxnMarkersRequest.Builder(writeTxnMarkersRequestVersion, markersToSend)
+      error(s"test markersToSend:$markersToSend")
 
       new RequestAndCompletionHandler(
         currentTimeMs,
@@ -330,8 +330,14 @@ class TransactionMarkerChannelManager(
     if (prev != null) {
       info(s"Replaced an existing pending complete txn $prev with $pendingCompleteTxn while adding markers to send.")
     }
-    addTxnMarkersToBrokerQueue(txnMetadata.producerId,
-      txnMetadata.producerEpoch, txnResult, pendingCompleteTxn, txnMetadata.topicPartitions.toSet)
+
+    if (newMetadata.producerId == txnMetadata.producerId && newMetadata.producerEpoch == txnMetadata.producerEpoch)
+      addTxnMarkersToBrokerQueue(txnMetadata.producerId,
+        txnMetadata.producerEpoch, txnResult, pendingCompleteTxn, txnMetadata.topicPartitions.toSet)
+    else
+      addTxnMarkersToBrokerQueue(txnMetadata.producerId, txnMetadata.producerEpoch, txnResult, pendingCompleteTxn,
+        txnMetadata.topicPartitions.toSet, newMetadata.producerId, newMetadata.producerEpoch)
+
     maybeWriteTxnCompletion(transactionalId)
   }
 
@@ -388,8 +394,8 @@ class TransactionMarkerChannelManager(
                                  result: TransactionResult,
                                  pendingCompleteTxn: PendingCompleteTxn,
                                  topicPartitions: immutable.Set[TopicPartition],
-                                 bumpProducerId: Long = RecordBatch.NO_PRODUCER_ID,
-                                 bumpProducerEpoch: Short = RecordBatch.NO_PRODUCER_EPOCH): Unit = {
+                                 bumpProducerId: Long = ProducerIdAndEpoch.NONE.producerId,
+                                 bumpProducerEpoch: Short = ProducerIdAndEpoch.NONE.epoch): Unit = {
     val txnTopicPartition = txnStateManager.partitionFor(pendingCompleteTxn.transactionalId)
     val partitionsByDestination: immutable.Map[Option[Node], immutable.Set[TopicPartition]] = topicPartitions.groupBy { topicPartition: TopicPartition =>
       metadataCache.getPartitionLeaderEndpoint(topicPartition.topic, topicPartition.partition, interBrokerListenerName)

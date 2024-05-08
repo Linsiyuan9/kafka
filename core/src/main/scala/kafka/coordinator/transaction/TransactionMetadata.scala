@@ -342,12 +342,16 @@ private[transaction] class TransactionMetadata(val transactionalId: String,
       txnStartTimestamp, updateTimestamp)
   }
 
+  def prepareComplete(updateTimestamp: Long): TxnTransitMetadata = {
+    prepareComplete(updateTimestamp, producerId, producerEpoch)
+  }
+
   def prepareComplete(updateTimestamp: Long, newProducerId: Long, newProducerEpoch: Short): TxnTransitMetadata = {
     val newState = if (state == PrepareCommit) CompleteCommit else CompleteAbort
 
     // Since the state change was successfully written to the log, unset the flag for a failed epoch fence
-      hasFailedEpochFence = false
-      prepareTransitionTo(newState, newProducerId, newProducerEpoch, producerEpoch, txnTimeoutMs, Set.empty[TopicPartition],
+    hasFailedEpochFence = false
+    prepareTransitionTo(newState, newProducerId, newProducerEpoch, producerEpoch, txnTimeoutMs, Set.empty[TopicPartition],
       txnStartTimestamp, updateTimestamp)
   }
 
@@ -473,7 +477,7 @@ private[transaction] class TransactionMetadata(val transactionalId: String,
             lastProducerEpoch = transitMetadata.lastProducerEpoch
             producerId = transitMetadata.producerId
             lastProducerId = transitMetadata.lastProducerId
-
+            error(s" test epoch bump after transaction:producerEpoch:$producerEpoch,lastProducerEpoch:$lastProducerEpoch,producerId:$producerId,lastProducerId:$lastProducerId")
             topicPartitions.clear()
           }
 
