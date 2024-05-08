@@ -17,7 +17,7 @@
   "apiKey": 27,
   "type": "response",
   "name": "WriteTxnMarkersResponse",
-  "validVersions": "0-1",
+  "validVersions": "0-2",
   // Version 1 enables flexible versions.
   "flexibleVersions": "1+",
   "fields": [

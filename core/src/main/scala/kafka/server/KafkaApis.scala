@@ -2375,6 +2375,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val numAppends = new AtomicInteger(markers.size)
 
     if (numAppends.get == 0) {
+      error(s"handleWriteTxnMarkersRequest() 5")
       requestHelper.sendResponseExemptThrottle(request, new WriteTxnMarkersResponse(errors))
       return
     }
@@ -2425,6 +2426,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     // API in ReplicaManager. For now, we've done the simpler approach
     var skippedMarkers = 0
     for (marker <- markers.asScala) {
+      error(s"handleWriteTxnMarkersRequest() 4:${marker}")
       val producerId = marker.producerId
       val partitionsWithCompatibleMessageFormat = new mutable.ArrayBuffer[TopicPartition]
 
@@ -2438,6 +2440,7 @@ class KafkaApis(val requestChannel: RequestChannel,
               partitionsWithCompatibleMessageFormat += partition
           case None =>
             currentErrors.put(partition, Errors.UNKNOWN_TOPIC_OR_PARTITION)
+            error("handleWriteTxnMarkersRequest() 3")
         }
       }
 
@@ -2447,7 +2450,9 @@ class KafkaApis(val requestChannel: RequestChannel,
       if (partitionsWithCompatibleMessageFormat.isEmpty) {
         numAppends.decrementAndGet()
         skippedMarkers += 1
+        error("handleWriteTxnMarkersRequest() 2")
       } else {
+        error("handleWriteTxnMarkersRequest() 1")
         val controlRecordType = marker.transactionResult match {
           case TransactionResult.COMMIT => ControlRecordType.COMMIT
           case TransactionResult.ABORT => ControlRecordType.ABORT
