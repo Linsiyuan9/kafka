@@ -1,5 +1,3 @@
-package org.apache.kafka.clients;
-
 /*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. See the NOTICE file distributed with
@@ -16,6 +14,7 @@ package org.apache.kafka.clients;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.kafka.clients;
 
 
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -26,7 +25,6 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 public class TransactionTest {
 

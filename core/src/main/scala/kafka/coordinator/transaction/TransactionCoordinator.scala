@@ -409,7 +409,10 @@ class TransactionCoordinator(txnConfig: TransactionConfig,
 
           // generate the new transaction metadata with added partitions
           txnMetadata.inLock {
-            if (txnMetadata.producerId != producerId) {
+            if (txnMetadata.pendingTransitionInProgress) {
+              // return a retriable exception to let the client backoff and retry
+              Left(Errors.CONCURRENT_TRANSACTIONS)
+            } else if (txnMetadata.producerId != producerId) {
               Left(Errors.INVALID_PRODUCER_ID_MAPPING)
             } else if (txnMetadata.producerEpoch != producerEpoch) {
               Left(Errors.PRODUCER_FENCED)

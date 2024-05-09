@@ -1552,7 +1552,7 @@ public class TransactionManager {
                         bumpEpoch != ProducerIdAndEpoch.NONE.epoch) {
                     if (bumpEpoch == producerIdAndEpoch.epoch + 1 || (bumpEpoch == 0 && bumpProducerId != producerIdAndEpoch.producerId)) {
                         ProducerIdAndEpoch bumpProducerIdAndEpoch = new ProducerIdAndEpoch(bumpProducerId, bumpEpoch);
-                        log.error("client" + bumpProducerIdAndEpoch);
+                        log.debug("After Txn,bump epoch:" + bumpProducerIdAndEpoch);
                         setProducerIdAndEpoch(bumpProducerIdAndEpoch);
                         completeTransaction();
                         result.done();
