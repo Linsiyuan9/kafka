@@ -18,9 +18,11 @@ package org.apache.kafka.common.record;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
+import org.apache.kafka.common.message.KRaftVersionRecord;
 import org.apache.kafka.common.message.LeaderChangeMessage;
-import org.apache.kafka.common.message.SnapshotHeaderRecord;
 import org.apache.kafka.common.message.SnapshotFooterRecord;
+import org.apache.kafka.common.message.SnapshotHeaderRecord;
+import org.apache.kafka.common.message.VotersRecord;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter.BatchRetention;
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter.BatchRetentionResult;
@@ -154,7 +156,7 @@ public class MemoryRecords extends AbstractRecords {
 
     /**
      * Note: This method is also used to convert the first timestamp of the batch (which is usually the timestamp of the first record)
-     * to the delete horizon of the tombstones or txn markers which are present in the batch. 
+     * to the delete horizon of the tombstones or txn markers which are present in the batch.
      */
     private static FilterResult filterTo(TopicPartition partition, Iterable<MutableRecordBatch> batches,
                                          RecordFilter filter, ByteBuffer destinationBuffer, int maxRecordBatchSize,
@@ -209,7 +211,7 @@ public class MemoryRecords extends AbstractRecords {
                                 partition, batch.lastOffset(), maxRecordBatchSize, filteredBatchSize);
 
                         MemoryRecordsBuilder.RecordsInfo info = builder.info();
-                        filterResult.updateRetainedBatchMetadata(info.maxTimestamp, info.offsetOfMaxTimestamp,
+                        filterResult.updateRetainedBatchMetadata(info.maxTimestamp, info.shallowOffsetOfMaxTimestamp,
                             maxOffset, retainedRecords.size(), filteredBatchSize);
                     }
                 }
@@ -399,7 +401,7 @@ public class MemoryRecords extends AbstractRecords {
         private int bytesRetained = 0;
         private long maxOffset = -1L;
         private long maxTimestamp = RecordBatch.NO_TIMESTAMP;
-        private long offsetOfMaxTimestamp = -1L;
+        private long shallowOffsetOfMaxTimestamp = -1L;
 
         private FilterResult(ByteBuffer outputBuffer) {
             this.outputBuffer = outputBuffer;
@@ -411,21 +413,21 @@ public class MemoryRecords extends AbstractRecords {
                     retainedBatch.lastOffset(), numMessagesInBatch, bytesRetained);
         }
 
-        private void updateRetainedBatchMetadata(long maxTimestamp, long offsetOfMaxTimestamp, long maxOffset,
+        private void updateRetainedBatchMetadata(long maxTimestamp, long shallowOffsetOfMaxTimestamp, long maxOffset,
                                                  int messagesRetained, int bytesRetained) {
-            validateBatchMetadata(maxTimestamp, offsetOfMaxTimestamp, maxOffset);
+            validateBatchMetadata(maxTimestamp, shallowOffsetOfMaxTimestamp, maxOffset);
             if (maxTimestamp > this.maxTimestamp) {
                 this.maxTimestamp = maxTimestamp;
-                this.offsetOfMaxTimestamp = offsetOfMaxTimestamp;
+                this.shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp;
             }
             this.maxOffset = Math.max(maxOffset, this.maxOffset);
             this.messagesRetained += messagesRetained;
             this.bytesRetained += bytesRetained;
         }
 
-        private void validateBatchMetadata(long maxTimestamp, long offsetOfMaxTimestamp, long maxOffset) {
-            if (maxTimestamp != RecordBatch.NO_TIMESTAMP && offsetOfMaxTimestamp < 0)
-                throw new IllegalArgumentException("offset undefined for maximum timestamp " + maxTimestamp);
+        private void validateBatchMetadata(long maxTimestamp, long shallowOffsetOfMaxTimestamp, long maxOffset) {
+            if (maxTimestamp != RecordBatch.NO_TIMESTAMP && shallowOffsetOfMaxTimestamp < 0)
+                throw new IllegalArgumentException("shallowOffset undefined for maximum timestamp " + maxTimestamp);
             if (maxOffset < 0)
                 throw new IllegalArgumentException("maxOffset undefined");
         }
@@ -458,8 +460,8 @@ public class MemoryRecords extends AbstractRecords {
             return maxTimestamp;
         }
 
-        public long offsetOfMaxTimestamp() {
-            return offsetOfMaxTimestamp;
+        public long shallowOffsetOfMaxTimestamp() {
+            return shallowOffsetOfMaxTimestamp;
         }
     }
 
@@ -728,25 +730,15 @@ public class MemoryRecords extends AbstractRecords {
         ByteBuffer buffer,
         LeaderChangeMessage leaderChangeMessage
     ) {
-        writeLeaderChangeMessage(buffer, initialOffset, timestamp, leaderEpoch, leaderChangeMessage);
-        buffer.flip();
-        return MemoryRecords.readableRecords(buffer);
-    }
-
-    private static void writeLeaderChangeMessage(
-        ByteBuffer buffer,
-        long initialOffset,
-        long timestamp,
-        int leaderEpoch,
-        LeaderChangeMessage leaderChangeMessage
-    ) {
-        try (MemoryRecordsBuilder builder = new MemoryRecordsBuilder(
-            buffer, RecordBatch.CURRENT_MAGIC_VALUE, CompressionType.NONE,
-            TimestampType.CREATE_TIME, initialOffset, timestamp,
-            RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, RecordBatch.NO_SEQUENCE,
-            false, true, leaderEpoch, buffer.capacity())
+        try (MemoryRecordsBuilder builder = createKraftControlRecordBuilder(
+                initialOffset,
+                timestamp,
+                leaderEpoch,
+                buffer
+            )
         ) {
             builder.appendLeaderChangeMessage(timestamp, leaderChangeMessage);
+            return builder.build();
         }
     }
 
@@ -757,25 +749,15 @@ public class MemoryRecords extends AbstractRecords {
         ByteBuffer buffer,
         SnapshotHeaderRecord snapshotHeaderRecord
     ) {
-        writeSnapshotHeaderRecord(buffer, initialOffset, timestamp, leaderEpoch, snapshotHeaderRecord);
-        buffer.flip();
-        return MemoryRecords.readableRecords(buffer);
-    }
-
-    private static void writeSnapshotHeaderRecord(
-        ByteBuffer buffer,
-        long initialOffset,
-        long timestamp,
-        int leaderEpoch,
-        SnapshotHeaderRecord snapshotHeaderRecord
-    ) {
-        try (MemoryRecordsBuilder builder = new MemoryRecordsBuilder(
-            buffer, RecordBatch.CURRENT_MAGIC_VALUE, CompressionType.NONE,
-            TimestampType.CREATE_TIME, initialOffset, timestamp,
-            RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, RecordBatch.NO_SEQUENCE,
-            false, true, leaderEpoch, buffer.capacity())
+        try (MemoryRecordsBuilder builder = createKraftControlRecordBuilder(
+                initialOffset,
+                timestamp,
+                leaderEpoch,
+                buffer
+            )
         ) {
             builder.appendSnapshotHeaderMessage(timestamp, snapshotHeaderRecord);
+            return builder.build();
         }
     }
 
@@ -786,25 +768,76 @@ public class MemoryRecords extends AbstractRecords {
         ByteBuffer buffer,
         SnapshotFooterRecord snapshotFooterRecord
     ) {
-        writeSnapshotFooterRecord(buffer, initialOffset, timestamp, leaderEpoch, snapshotFooterRecord);
-        buffer.flip();
-        return MemoryRecords.readableRecords(buffer);
+        try (MemoryRecordsBuilder builder = createKraftControlRecordBuilder(
+                initialOffset,
+                timestamp,
+                leaderEpoch,
+                buffer
+            )
+        ) {
+            builder.appendSnapshotFooterMessage(timestamp, snapshotFooterRecord);
+            return builder.build();
+        }
     }
 
-    private static void writeSnapshotFooterRecord(
-        ByteBuffer buffer,
+    public static MemoryRecords withKRaftVersionRecord(
         long initialOffset,
         long timestamp,
         int leaderEpoch,
-        SnapshotFooterRecord snapshotFooterRecord
+        ByteBuffer buffer,
+        KRaftVersionRecord kraftVersionRecord
     ) {
-        try (MemoryRecordsBuilder builder = new MemoryRecordsBuilder(
-            buffer, RecordBatch.CURRENT_MAGIC_VALUE, CompressionType.NONE,
-            TimestampType.CREATE_TIME, initialOffset, timestamp,
-            RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, RecordBatch.NO_SEQUENCE,
-            false, true, leaderEpoch, buffer.capacity())
+        try (MemoryRecordsBuilder builder = createKraftControlRecordBuilder(
+                initialOffset,
+                timestamp,
+                leaderEpoch,
+                buffer
+            )
         ) {
-            builder.appendSnapshotFooterMessage(timestamp, snapshotFooterRecord);
+            builder.appendKRaftVersionMessage(timestamp, kraftVersionRecord);
+            return builder.build();
         }
+    }
+
+    public static MemoryRecords withVotersRecord(
+        long initialOffset,
+        long timestamp,
+        int leaderEpoch,
+        ByteBuffer buffer,
+        VotersRecord votersRecord
+    ) {
+        try (MemoryRecordsBuilder builder = createKraftControlRecordBuilder(
+                initialOffset,
+                timestamp,
+                leaderEpoch,
+                buffer
+            )
+        ) {
+            builder.appendVotersMessage(timestamp, votersRecord);
+            return builder.build();
+        }
+    }
+
+    private static MemoryRecordsBuilder createKraftControlRecordBuilder(
+        long initialOffset,
+        long timestamp,
+        int leaderEpoch,
+        ByteBuffer buffer
+    ) {
+        return new MemoryRecordsBuilder(
+            buffer,
+            RecordBatch.CURRENT_MAGIC_VALUE,
+            CompressionType.NONE,
+            TimestampType.CREATE_TIME,
+            initialOffset,
+            timestamp,
+            RecordBatch.NO_PRODUCER_ID,
+            RecordBatch.NO_PRODUCER_EPOCH,
+            RecordBatch.NO_SEQUENCE,
+            false,
+            true,
+            leaderEpoch,
+            buffer.capacity()
+        );
     }
 }

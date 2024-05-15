@@ -51,7 +51,7 @@ import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble.VerificationF
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble.VerificationFlag.REQUIRE_V0
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble}
 import org.apache.kafka.metadata.{BrokerState, MetadataRecordSerde, VersionRange}
-import org.apache.kafka.raft.RaftConfig
+import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.security.CredentialProvider
 import org.apache.kafka.server.NodeToControllerChannelManager
 import org.apache.kafka.server.authorizer.Authorizer
@@ -68,6 +68,7 @@ import org.apache.zookeeper.client.ZKClientConfig
 import java.io.{File, IOException}
 import java.net.{InetAddress, SocketTimeoutException}
 import java.nio.file.{Files, Paths}
+import java.time.Duration
 import java.util
 import java.util.{Optional, OptionalInt, OptionalLong}
 import java.util.concurrent._
@@ -128,7 +129,7 @@ class KafkaServer(
   var metrics: Metrics = _
 
   @volatile var dataPlaneRequestProcessor: KafkaApis = _
-  var controlPlaneRequestProcessor: KafkaApis = _
+  private var controlPlaneRequestProcessor: KafkaApis = _
 
   var authorizer: Option[Authorizer] = None
   @volatile var socketServer: SocketServer = _
@@ -196,7 +197,7 @@ class KafkaServer(
 
   override def logManager: LogManager = _logManager
 
-  def kafkaController: KafkaController = _kafkaController
+  @volatile def kafkaController: KafkaController = _kafkaController
 
   var lifecycleManager: BrokerLifecycleManager = _
   private var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _
@@ -321,8 +322,9 @@ class KafkaServer(
         remoteLogManagerOpt = createRemoteLogManager()
 
         if (config.migrationEnabled) {
-          kraftControllerNodes = RaftConfig.voterConnectionsToNodes(
-            RaftConfig.parseVoterConnections(config.quorumVoters)).asScala
+          kraftControllerNodes = QuorumConfig.voterConnectionsToNodes(
+            QuorumConfig.parseVoterConnections(config.quorumVoters)
+          ).asScala
         } else {
           kraftControllerNodes = Seq.empty
         }
@@ -420,9 +422,13 @@ class KafkaServer(
             isZkBroker = true,
             logManager.directoryIdsSet)
 
+          // For ZK brokers in migration mode, always delete the metadata partition on startup.
+          logger.info(s"Deleting local metadata log from ${config.metadataLogDir} since this is a ZK broker in migration mode.")
+          KafkaRaftManager.maybeDeleteMetadataLogDir(config)
+          logger.info("Successfully deleted local metadata log. It will be re-created.")
+
           // If the ZK broker is in migration mode, start up a RaftManager to learn about the new KRaft controller
-          val controllerQuorumVotersFuture = CompletableFuture.completedFuture(
-            RaftConfig.parseVoterConnections(config.quorumVoters))
+          val quorumVoters = QuorumConfig.parseVoterConnections(config.quorumVoters)
           raftManager = new KafkaRaftManager[ApiMessageAndVersion](
             metaPropsEnsemble.clusterId().get(),
             config,
@@ -432,10 +438,10 @@ class KafkaServer(
             time,
             metrics,
             threadNamePrefix,
-            controllerQuorumVotersFuture,
+            CompletableFuture.completedFuture(quorumVoters),
             fatalFaultHandler = new LoggingFaultHandler("raftManager", () => shutdown())
           )
-          val controllerNodes = RaftConfig.voterConnectionsToNodes(controllerQuorumVotersFuture.get()).asScala
+          val controllerNodes = QuorumConfig.voterConnectionsToNodes(quorumVoters).asScala
           val quorumControllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
           val brokerToQuorumChannelManager = new NodeToControllerChannelManagerImpl(
             controllerNodeProvider = quorumControllerNodeProvider,
@@ -535,9 +541,17 @@ class KafkaServer(
             }.toMap
         }
 
-        val fetchManager = new FetchManager(Time.SYSTEM,
-          new FetchSessionCache(config.maxIncrementalFetchSessionCacheSlots,
-            KafkaServer.MIN_INCREMENTAL_FETCH_SESSION_EVICTION_MS))
+        // The FetchSessionCache is divided into config.numIoThreads shards, each responsible
+        // for Math.max(1, shardNum * sessionIdRange) <= sessionId < (shardNum + 1) * sessionIdRange
+        val sessionIdRange = Int.MaxValue / NumFetchSessionCacheShards
+        val fetchSessionCacheShards = (0 until NumFetchSessionCacheShards)
+          .map(shardNum => new FetchSessionCacheShard(
+            config.maxIncrementalFetchSessionCacheSlots / NumFetchSessionCacheShards,
+            KafkaServer.MIN_INCREMENTAL_FETCH_SESSION_EVICTION_MS,
+            sessionIdRange,
+            shardNum
+          ))
+        val fetchManager = new FetchManager(Time.SYSTEM, new FetchSessionCache(fetchSessionCacheShards))
 
         // Start RemoteLogManager before broker start serving the requests.
         remoteLogManagerOpt.foreach { rlm =>
@@ -656,15 +670,19 @@ class KafkaServer(
   }
 
   private def createCurrentControllerIdMetric(): Unit = {
-    KafkaYammerMetrics.defaultRegistry().newGauge(MetadataLoaderMetrics.CURRENT_CONTROLLER_ID, () => {
-      Option(metadataCache) match {
-        case None => -1
-        case Some(cache) => cache.getControllerId match {
-          case None => -1
-          case Some(id) => id.id
-        }
-      }
-    })
+    KafkaYammerMetrics.defaultRegistry().newGauge(MetadataLoaderMetrics.CURRENT_CONTROLLER_ID,
+      () => getCurrentControllerIdFromOldController())
+  }
+
+  /**
+   * Get the current controller ID from the old controller code.
+   * This is the most up-to-date controller ID we can get when in ZK mode.
+   */
+  def getCurrentControllerIdFromOldController(): Int = {
+    Option(_kafkaController) match {
+      case None => -1
+      case Some(controller) => controller.activeControllerId
+    }
   }
 
   private def unregisterCurrentControllerIdMetric(): Unit = {
@@ -773,7 +791,7 @@ class KafkaServer(
       if (config.requiresZookeeper &&
         metadataCache.getControllerId.exists(_.isInstanceOf[KRaftCachedControllerId])) {
         info("ZkBroker currently has a KRaft controller. Controlled shutdown will be handled " +
-          "through broker life cycle manager")
+          "through broker lifecycle manager")
         return true
       }
       val metadataUpdater = new ManualMetadataUpdater()
@@ -947,7 +965,7 @@ class KafkaServer(
    * Shutdown API for shutting down a single instance of the Kafka server.
    * Shuts down the LogManager, the SocketServer and the log cleaner scheduler thread
    */
-  override def shutdown(): Unit = {
+  override def shutdown(timeout: Duration): Unit = {
     try {
       info("shutting down")
 

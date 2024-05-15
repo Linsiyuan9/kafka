@@ -47,6 +47,8 @@ import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -74,7 +76,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SuppressWarnings("ClassDataAbstractionCoupling")
 public class ConsumerNetworkThreadTest {
 
     private ConsumerTestBuilder.ConsumerNetworkThreadTestBuilder testBuilder;
@@ -86,11 +87,8 @@ public class ConsumerNetworkThreadTest {
     private OffsetsRequestManager offsetsRequestManager;
     private CommitRequestManager commitRequestManager;
     private CoordinatorRequestManager coordinatorRequestManager;
-    private HeartbeatRequestManager heartbeatRequestManager;
-    private MembershipManager memberhipsManager;
     private ConsumerNetworkThread consumerNetworkThread;
     private MockClient client;
-    private SubscriptionState subscriptions;
 
     @BeforeEach
     public void setup() {
@@ -104,10 +102,7 @@ public class ConsumerNetworkThreadTest {
         commitRequestManager = testBuilder.commitRequestManager.orElseThrow(IllegalStateException::new);
         offsetsRequestManager = testBuilder.offsetsRequestManager;
         coordinatorRequestManager = testBuilder.coordinatorRequestManager.orElseThrow(IllegalStateException::new);
-        heartbeatRequestManager = testBuilder.heartbeatRequestManager.orElseThrow(IllegalStateException::new);
-        memberhipsManager = testBuilder.membershipManager.orElseThrow(IllegalStateException::new);
         consumerNetworkThread = testBuilder.consumerNetworkThread;
-        subscriptions = testBuilder.subscriptions;
         consumerNetworkThread.initializeResources();
     }
 
@@ -169,11 +164,12 @@ public class ConsumerNetworkThreadTest {
         verify(applicationEventProcessor).process(any(SyncCommitEvent.class));
     }
 
-    @Test
-    public void testListOffsetsEventIsProcessed() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testListOffsetsEventIsProcessed(boolean requireTimestamp) {
         Map<TopicPartition, Long> timestamps = Collections.singletonMap(new TopicPartition("topic1", 1), 5L);
         Timer timer = time.timer(100);
-        ApplicationEvent e = new ListOffsetsEvent(timestamps, true, timer);
+        ApplicationEvent e = new ListOffsetsEvent(timestamps, timer, requireTimestamp);
         applicationEventsQueue.add(e);
         consumerNetworkThread.runOnce();
         verify(applicationEventProcessor).process(any(ListOffsetsEvent.class));
