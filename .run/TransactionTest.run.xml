@@ -1,0 +1,15 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="TransactionTest" type="Application" factoryName="Application" folderName="kafka" nameIsGenerated="true">
+    <option name="MAIN_CLASS_NAME" value="com.lsy.kafka.TransactionTest" />
+    <module name="IdeaProjects.kafka.self-test.main" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="com.lsy.kafka.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

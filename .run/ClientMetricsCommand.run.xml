@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ClientMetricsCommand" type="Application" factoryName="Application" folderName="kafka" nameIsGenerated="true">
+    <option name="MAIN_CLASS_NAME" value="org.apache.kafka.tools.ClientMetricsCommand" />
+    <module name="kafka.tools.main" />
+    <option name="PROGRAM_PARAMETERS" value="--bootstrap-server localhost:9092 --alter --generate-name --metrics org.apache.kafka.producer. --interval 1000" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="org.apache.kafka.tools.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

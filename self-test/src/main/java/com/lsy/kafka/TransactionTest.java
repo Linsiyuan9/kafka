@@ -60,8 +60,6 @@ public class TransactionTest {
             ProducerRecord<String, String> producerRecord3 = new ProducerRecord<>(
                     "test-topic-1", "3", "sendValue");
 
-            producer.initTransactions();
-            producer.beginTransaction();
             Future<RecordMetadata> recordResult1 = producer.send(producerRecord1);
             Future<RecordMetadata> recordResult2 = producer.send(producerRecord2);
             Future<RecordMetadata> recordResult3 = producer.send(producerRecord3);
@@ -70,7 +68,6 @@ public class TransactionTest {
             TimeUnit.SECONDS.sleep(100);
             System.out.println(Thread.currentThread().getName() + ":end sleep");
 
-            producer.commitTransaction();
             recordResult1.get();
             recordResult2.get();
             recordResult3.get();

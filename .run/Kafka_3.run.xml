@@ -1,0 +1,19 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Kafka_3" type="Application" factoryName="Application" folderName="kafka">
+    <option name="MAIN_CLASS_NAME" value="kafka.Kafka" />
+    <module name="kafka.core.main" />
+    <option name="PROGRAM_PARAMETERS" value="C:\tmp\server_3.properties" />
+    <shortenClasspath name="MANIFEST" />
+    <option name="VM_PARAMETERS" value="-Djava.rmi.server.hostname=127.0.0.1 -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=4446 -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/core" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="kafka.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
