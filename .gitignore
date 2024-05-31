@@ -61,4 +61,5 @@ storage/kafka-tiered-storage/
 ./temp
 
 docker/test/report_*.html
+kafka.Kafka
 __pycache__
