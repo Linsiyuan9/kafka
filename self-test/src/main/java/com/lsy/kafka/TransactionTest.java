@@ -17,11 +17,20 @@
 
 package com.lsy.kafka;
 
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
 
+import java.time.Duration;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -31,9 +40,31 @@ public class TransactionTest {
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
 
-        t2();
+//        t2();
 //        t3();
 //        t4();
+        t5();
+    }
+
+    public static void t5() {
+        Properties properties = new Properties();
+        properties.put("bootstrap.servers", "localhost:9092");
+        properties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        properties.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        properties.put("group.id", "test_group"); // 消费者组ID
+        properties.put("enable.auto.commit", "true"); // 是否自动提交offset，默认为true
+        properties.put("auto.commit.interval.ms", "1000"); // 自动提交offset的时间间隔
+
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(properties);
+        consumer.subscribe(Collections.singleton("test"));
+
+        while(true){
+            ConsumerRecords<String, String> consumerRecords = consumer.poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<String, String> consumerRecord : consumerRecords) {
+                System.out.println(consumerRecord);
+            }
+            consumer.commitAsync((offsets, e) -> System.out.println(e));
+        }
     }
 
     public static void t2() throws ExecutionException, InterruptedException {
