@@ -87,6 +87,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
+import java.util.function.BiPredicate;
 import java.util.function.IntSupplier;
 import java.util.stream.Collectors;
 
@@ -798,6 +799,47 @@ public class GroupCoordinatorService implements GroupCoordinator {
                 "fetch-all-offsets",
                 topicPartitionFor(request.groupId()),
                 (coordinator, offset) -> coordinator.fetchAllOffsets(request, offset)
+            );
+        }
+    }
+
+    @Override
+    public CompletableFuture<OffsetFetchResponseData.OffsetFetchResponseGroup> fetchLimitOffsets(
+            RequestContext context,
+            OffsetFetchRequestData.OffsetFetchRequestGroup request,
+            BiPredicate<String,Integer> partitionFilter,
+            boolean requireStable,
+            int paginationSizeLimit) {
+        if (!isActive.get()) {
+            return CompletableFuture.completedFuture(new OffsetFetchResponseData.OffsetFetchResponseGroup()
+                    .setGroupId(request.groupId())
+                    .setErrorCode(Errors.COORDINATOR_NOT_AVAILABLE.code())
+            );
+        }
+
+        if (request.groupId() == null) {
+            return CompletableFuture.completedFuture(new OffsetFetchResponseData.OffsetFetchResponseGroup()
+                    .setGroupId(request.groupId())
+                    .setErrorCode(Errors.INVALID_GROUP_ID.code())
+            );
+        }
+
+        if (requireStable) {
+            return runtime.scheduleWriteOperation(
+                    "fetch-limit-offsets",
+                    topicPartitionFor(request.groupId()),
+                    Duration.ofMillis(config.offsetCommitTimeoutMs()),
+                    coordinator -> new CoordinatorResult<>(
+                            Collections.emptyList(),
+                            coordinator.fetchLimitOffsets(request, partitionFilter, Long.MAX_VALUE, paginationSizeLimit)
+                    )
+            );
+        } else {
+            return runtime.scheduleReadOperation(
+                    "fetch-limit-offsets",
+                    topicPartitionFor(request.groupId()),
+                    (coordinator, offset) ->
+                            coordinator.fetchLimitOffsets(request, partitionFilter, offset, paginationSizeLimit)
             );
         }
     }

@@ -143,6 +143,8 @@ public class AdminClientConfig extends AbstractConfig {
     public static final String METADATA_RECOVERY_STRATEGY_CONFIG = CommonClientConfigs.METADATA_RECOVERY_STRATEGY_CONFIG;
     public static final String METADATA_RECOVERY_STRATEGY_DOC = CommonClientConfigs.METADATA_RECOVERY_STRATEGY_DOC;
     public static final String DEFAULT_METADATA_RECOVERY_STRATEGY = CommonClientConfigs.DEFAULT_METADATA_RECOVERY_STRATEGY;
+    public static final String MAX_REQUEST_PAGINATION_SIZE_LIMIT_CONFIG = CommonClientConfigs.MAX_REQUEST_PAGINATION_SIZE_LIMIT_CONFIG;
+    public static final String MAX_REQUEST_PAGINATION_SIZE_LIMIT_DOC = CommonClientConfigs.MAX_REQUEST_PAGINATION_SIZE_LIMIT_DOC;
 
     /**
      * <code>security.providers</code>
@@ -266,6 +268,7 @@ public class AdminClientConfig extends AbstractConfig {
                                                 .in(Utils.enumOptions(SecurityProtocol.class)),
                                         Importance.MEDIUM,
                                         SECURITY_PROTOCOL_DOC)
+                //todo what
                                 .withClientSslSupport()
                                 .withClientSaslSupport()
                                 .define(METADATA_RECOVERY_STRATEGY_CONFIG,
@@ -274,7 +277,12 @@ public class AdminClientConfig extends AbstractConfig {
                                         ConfigDef.CaseInsensitiveValidString
                                                 .in(Utils.enumOptions(MetadataRecoveryStrategy.class)),
                                         Importance.LOW,
-                                        METADATA_RECOVERY_STRATEGY_DOC);
+                                        METADATA_RECOVERY_STRATEGY_DOC)
+                                .define(MAX_REQUEST_PAGINATION_SIZE_LIMIT_CONFIG,
+                                        Type.INT,
+                                        CommonClientConfigs.MAX_REQUEST_PAGINATION_SIZE_LIMIT_DEFAULT,
+                                        Importance.LOW,
+                                        MAX_REQUEST_PAGINATION_SIZE_LIMIT_DOC);
     }
 
     @Override

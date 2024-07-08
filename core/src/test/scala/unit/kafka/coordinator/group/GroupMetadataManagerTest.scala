@@ -17,13 +17,7 @@
 
 package kafka.coordinator.group
 
-import java.lang.management.ManagementFactory
-import java.nio.ByteBuffer
-import java.util.concurrent.locks.ReentrantLock
-import java.util.{Collections, Optional, OptionalInt}
 import com.yammer.metrics.core.Gauge
-
-import javax.management.ObjectName
 import kafka.cluster.Partition
 import kafka.common.OffsetAndMetadata
 import kafka.log.UnifiedLog
@@ -33,32 +27,39 @@ import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor
 import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor.Subscription
 import org.apache.kafka.clients.consumer.internals.ConsumerProtocol
 import org.apache.kafka.common.compress.Compression
-import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.internals.Topic
+import org.apache.kafka.common.message.OffsetFetchRequestData
+import org.apache.kafka.common.message.OffsetFetchResponseData.OffsetFetchCursor
 import org.apache.kafka.common.metrics.{JmxReporter, KafkaMetricsContext, Metrics => kMetrics}
 import org.apache.kafka.common.protocol.types.Field.TaggedFieldsSection
-import org.apache.kafka.common.protocol.types.{CompactArrayOf, Field, Schema, Struct, Type}
+import org.apache.kafka.common.protocol.types._
 import org.apache.kafka.common.protocol.{ByteBufferAccessor, Errors, MessageUtil}
 import org.apache.kafka.common.record._
 import org.apache.kafka.common.requests.OffsetFetchResponse
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.utils.Utils
-import org.apache.kafka.coordinator.group.{GroupCoordinatorConfig, OffsetConfig}
+import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.generated.{GroupMetadataValue, OffsetCommitValue}
+import org.apache.kafka.coordinator.group.{GroupCoordinatorConfig, OffsetConfig}
 import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.server.common.MetadataVersion._
 import org.apache.kafka.server.metrics.KafkaYammerMetrics
 import org.apache.kafka.server.util.{KafkaScheduler, MockTime}
-import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, FetchIsolation, LogAppendInfo, LogOffsetMetadata, VerificationGuard}
-import org.junit.jupiter.api.Assertions._
+import org.apache.kafka.storage.internals.log._
+import org.junit.jupiter.api.Assertions.{assertEquals, _}
 import org.junit.jupiter.api.{AfterEach, BeforeEach, Test}
-import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong, anyShort}
-import org.mockito.Mockito.{mock, reset, times, verify, when}
+import org.mockito.Mockito._
+import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 
+import java.lang.management.ManagementFactory
+import java.nio.ByteBuffer
+import java.util.concurrent.locks.ReentrantLock
+import java.util.{Collections, Optional, OptionalInt}
+import javax.management.ObjectName
 import scala.annotation.nowarn
-import scala.jdk.CollectionConverters._
 import scala.collection.{immutable, _}
+import scala.jdk.CollectionConverters._
 
 class GroupMetadataManagerTest {
 
@@ -1307,6 +1308,104 @@ class GroupMetadataManagerTest {
       any())
     // Will update sensor after commit
     assertEquals(1, TestUtils.totalMetricValue(metrics, "offset-commit-count"))
+  }
+
+  @Test
+  def testGetOffsetFetchRequestResponse(): Unit = {
+    val memberId = ""
+    val offset = 37
+
+    groupMetadataManager.addOwnedPartition(groupPartitionId)
+
+    val group1 = new GroupMetadata("foo0", Empty, time)
+    groupMetadataManager.addGroup(group1)
+
+    val group2 = new GroupMetadata("foo2", Empty, time)
+    groupMetadataManager.addGroup(group2)
+
+    val offsetTopicPartition1 = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, groupMetadataManager.partitionFor(group1.groupId))
+    val fooTopicId = Uuid.randomUuid()
+    val topicIdPartition1 = new TopicIdPartition(fooTopicId, 0, "foo")
+    val offsets1 = immutable.Map(
+      topicIdPartition1 -> OffsetAndMetadata(offset, "", time.milliseconds()),
+      new TopicIdPartition(fooTopicId, 1, "foo") -> OffsetAndMetadata(offset, "", time.milliseconds()),
+      new TopicIdPartition(fooTopicId, 2, "foo") -> OffsetAndMetadata(offset, "", time.milliseconds()),
+      new TopicIdPartition(fooTopicId, 3, "foo") -> OffsetAndMetadata(offset, "", time.milliseconds())
+    )
+
+    val offsetTopicPartition2 = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, groupMetadataManager.partitionFor(group2.groupId))
+    val barTopicId = Uuid.randomUuid()
+    val topicIdPartition2 = new TopicIdPartition(barTopicId, 0, "foo2")
+    val offsets2 = immutable.Map(
+      topicIdPartition2 -> OffsetAndMetadata(offset, "", time.milliseconds()),
+      new TopicIdPartition(barTopicId, 1, "foo2") -> OffsetAndMetadata(offset, "", time.milliseconds()),
+      new TopicIdPartition(barTopicId, 2, "foo2") -> OffsetAndMetadata(offset, "", time.milliseconds()),
+      new TopicIdPartition(barTopicId, 3, "foo2") -> OffsetAndMetadata(offset, "", time.milliseconds())
+    )
+
+
+    expectAppendMessage(Errors.NONE)
+    var commitErrors: Option[immutable.Map[TopicIdPartition, Errors]] = None
+
+    def callback(errors: immutable.Map[TopicIdPartition, Errors]): Unit = {
+      commitErrors = Some(errors)
+    }
+
+    assertEquals(0, TestUtils.totalMetricValue(metrics, "offset-commit-count"))
+    groupMetadataManager.storeOffsets(group1, memberId, offsetTopicPartition1, offsets1, callback, verificationGuard = None)
+    assertTrue(group1.hasOffsets)
+
+    assertFalse(commitErrors.isEmpty)
+    val maybeError1 = commitErrors.get.get(topicIdPartition1)
+    assertEquals(Some(Errors.NONE), maybeError1)
+    assertTrue(group1.hasOffsets)
+
+    groupMetadataManager.storeOffsets(group2, memberId, offsetTopicPartition2, offsets2, callback, verificationGuard = None)
+    assertTrue(group2.hasOffsets)
+
+    assertFalse(commitErrors.isEmpty)
+    val maybeError2 = commitErrors.get.get(topicIdPartition2)
+    assertEquals(Some(Errors.NONE), maybeError2)
+    assertTrue(group2.hasOffsets)
+
+    val offsetFetchRequestDatas = Seq(
+      new OffsetFetchRequestData.OffsetFetchRequestGroup()
+        .setGroupId("foo0"),
+      new OffsetFetchRequestData.OffsetFetchRequestGroup()
+        .setGroupId("foo2"),
+    )
+
+
+
+    val offsetFetchResponseData = groupMetadataManager.getOffsetFetchRequestResponse(offsetFetchRequestDatas,
+      defaultRequireStable,
+      (_, _, _) => true,
+      7)
+    assertNotNull(offsetFetchResponseData.groups)
+    assertNotNull(offsetFetchResponseData.nextCursor)
+    assertEquals(offsetFetchResponseData.nextCursor.groupId,"foo2")
+    assertEquals(offsetFetchResponseData.nextCursor.topicName,"foo2")
+    assertEquals(offsetFetchResponseData.nextCursor.partitionIndex(),2)
+
+    def groupPartitionStartIndex(cursor: OffsetFetchCursor): (String, String, Int) => Boolean = {
+      (groupId, topicName, partitionIndex) => {
+        if (groupId.compareTo(cursor.groupId()) >= 0 && topicName.compareTo(cursor.topicName()) >= 0) {
+          partitionIndex > cursor.partitionIndex()
+        } else {
+          false
+        }
+      }
+    }
+
+    val offsetFetchResponseData1 = groupMetadataManager.getOffsetFetchRequestResponse(offsetFetchRequestDatas,
+      defaultRequireStable,
+      groupPartitionStartIndex(offsetFetchResponseData.nextCursor),
+      1)
+    assertNotNull(offsetFetchResponseData1.groups)
+    assertNotNull(offsetFetchResponseData1.nextCursor)
+    assertEquals(offsetFetchResponseData1.nextCursor.groupId, "foo2")
+    assertEquals(offsetFetchResponseData1.nextCursor.topicName, "foo2")
+    assertEquals(offsetFetchResponseData1.nextCursor.partitionIndex(), 3)
   }
 
   @Test

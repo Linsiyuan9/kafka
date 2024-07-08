@@ -139,6 +139,10 @@ public class ServerConfigs {
     public static final int MAX_REQUEST_PARTITION_SIZE_LIMIT_DEFAULT = 2000;
     public static final String MAX_REQUEST_PARTITION_SIZE_LIMIT_DOC = "The maximum number of partitions can be served in one request.";
 
+    public static final String MAX_REQUEST_PAGINATION_SIZE_LIMIT_CONFIG = "max.request.pagination.size.limit";
+    public static final int MAX_REQUEST_PAGINATION_SIZE_LIMIT_DEFAULT = 2000;
+    public static final String MAX_REQUEST_PAGINATION_SIZE_LIMIT_DOC = "The maximum number of pagination items can be served in one request.";
+
     /** Internal Configurations **/
     public static final String UNSTABLE_API_VERSIONS_ENABLE_CONFIG = "unstable.api.versions.enable";
     public static final String UNSTABLE_FEATURE_VERSIONS_ENABLE_CONFIG = "unstable.feature.versions.enable";
@@ -187,6 +191,7 @@ public class ServerConfigs {
 
             /** ********* Request Limit Configuration ***********/
             .define(MAX_REQUEST_PARTITION_SIZE_LIMIT_CONFIG, INT, MAX_REQUEST_PARTITION_SIZE_LIMIT_DEFAULT, atLeast(1), MEDIUM, MAX_REQUEST_PARTITION_SIZE_LIMIT_DOC)
+            .define(MAX_REQUEST_PAGINATION_SIZE_LIMIT_CONFIG, INT, MAX_REQUEST_PAGINATION_SIZE_LIMIT_DEFAULT, atLeast(1), MEDIUM, MAX_REQUEST_PAGINATION_SIZE_LIMIT_DOC)
             /** Internal Configurations **/
             // This indicates whether unreleased APIs should be advertised by this node.
             .defineInternal(UNSTABLE_API_VERSIONS_ENABLE_CONFIG, BOOLEAN, false, HIGH)

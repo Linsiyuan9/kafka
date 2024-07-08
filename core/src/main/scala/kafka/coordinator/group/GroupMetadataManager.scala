@@ -20,7 +20,7 @@ package kafka.coordinator.group
 import java.io.PrintStream
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
-import java.util.{Optional, OptionalInt}
+import java.util.{Collections, Optional, OptionalInt}
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.ConcurrentHashMap
@@ -34,9 +34,12 @@ import kafka.utils._
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.internals.Topic
+import org.apache.kafka.common.message.{OffsetFetchRequestData, OffsetFetchResponseData}
+import org.apache.kafka.common.message.OffsetFetchResponseData.OffsetFetchResponseGroup
 import org.apache.kafka.common.metrics.{Metrics, Sensor}
 import org.apache.kafka.common.metrics.stats.{Avg, Max, Meter}
 import org.apache.kafka.common.protocol.{ByteBufferAccessor, Errors, MessageUtil}
+import org.apache.kafka.common.record.RecordBatch.NO_PARTITION_LEADER_EPOCH
 import org.apache.kafka.common.record._
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
@@ -54,6 +57,7 @@ import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchIsolation, Ver
 import scala.collection._
 import scala.collection.mutable.ArrayBuffer
 import scala.jdk.CollectionConverters._
+import scala.util.control.Breaks.{break, breakable}
 
 class GroupMetadataManager(brokerId: Int,
                            interBrokerProtocolVersion: MetadataVersion,
@@ -499,46 +503,169 @@ class GroupMetadataManager(brokerId: Int,
     appendForGroup(group, records, requestLocal, putCacheCallback, verificationGuards)
   }
 
+  def getOffsetFetchRequestResponse(requests: Seq[OffsetFetchRequestData.OffsetFetchRequestGroup],
+                                    requireStable: Boolean,
+                                    groupPartitionStartIndex: (String, String, Int) => Boolean,
+                                    paginationSizeLimit: Int
+                                   ): OffsetFetchResponseData = {
+    var remaining = paginationSizeLimit
+    val offsetFetchResponseGroups = new ArrayBuffer[OffsetFetchResponseData.OffsetFetchResponseGroup]()
+    val cursor = new OffsetFetchResponseData.OffsetFetchCursor
+    breakable {
+      requests.sortBy(_.groupId()).foreach { request =>
+        val groupId = request.groupId()
+        cursor.setGroupId(groupId)
+        val group = groupMetadataCache.get(groupId)
+        if (group == null) {
+          val errorGroup = new OffsetFetchResponseData.OffsetFetchResponseGroup
+          errorGroup.setGroupId(groupId)
+          errorGroup.setTopics(Collections.emptyList)
+          errorGroup.setErrorCode(Errors.NONE.code())
+          offsetFetchResponseGroups += errorGroup
+        } else {
+          group.inLock {
+            if (group.is(Dead)) {
+              val errorGroup = new OffsetFetchResponseData.OffsetFetchResponseGroup
+              errorGroup.setGroupId(groupId)
+              errorGroup.setTopics(Collections.emptyList)
+              errorGroup.setErrorCode(Errors.NONE.code())
+              offsetFetchResponseGroups += errorGroup
+            } else {
+              val topicPartitions =
+                if (request.topics().isEmpty) {
+                  group.allOffsets.keySet.toSeq
+                } else {
+                  request.topics.asScala.flatMap(topic => {
+                    topic.partitionIndexes().asScala.map(partitionIndex => {
+                      new TopicPartition(topic.name, partitionIndex)
+                    })
+                  })
+                }
+              val partitionDataMap = new mutable.HashMap[TopicPartition, PartitionData]()
+              breakable {
+                topicPartitions.sortBy(t => (t.topic(), t.partition())).foreach { topicPartition =>
+                  if (groupPartitionStartIndex(groupId, topicPartition.topic(), topicPartition.partition())) {
+                    if (requireStable && group.hasPendingOffsetCommitsForTopicPartition(topicPartition)) {
+                      partitionDataMap += topicPartition -> new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
+                        Optional.empty(), "", Errors.UNSTABLE_OFFSET_COMMIT)
+                    } else {
+                      val partitionData = group.offset(topicPartition) match {
+                        case None =>
+                          new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
+                            Optional.empty(), "", Errors.NONE)
+                        case Some(offsetAndMetadata) =>
+                          new PartitionData(offsetAndMetadata.offset,
+                            offsetAndMetadata.leaderEpoch, offsetAndMetadata.metadata, Errors.NONE)
+                      }
+                      partitionDataMap += topicPartition -> partitionData
+                    }
+                    cursor.setTopicName(topicPartition.topic)
+                    cursor.setPartitionIndex(topicPartition.partition)
+                    if (remaining != -1) {
+                      remaining -= 1
+                      if (remaining <= 0) {
+                        break()
+                      }
+                    }
+                  }
+                }
+              }
+
+              if (partitionDataMap.nonEmpty) {
+                val topicPartitionResponses = new mutable.HashMap[String, OffsetFetchResponseData.OffsetFetchResponseTopics]()
+                partitionDataMap.foreach { case (partition, partitionData) =>
+                  val topics = topicPartitionResponses.getOrElseUpdate(partition.topic(),
+                    new OffsetFetchResponseData.OffsetFetchResponseTopics().setName(partition.topic()))
+                  val partitions = new OffsetFetchResponseData.OffsetFetchResponsePartitions()
+                    .setPartitionIndex(partition.partition())
+                    .setCommittedOffset(partitionData.offset)
+                    .setCommittedLeaderEpoch(partitionData.leaderEpoch.orElse(NO_PARTITION_LEADER_EPOCH))
+                    .setMetadata(partitionData.metadata)
+                  topics.partitions().add(partitions)
+                }
+                val offsetFetchResponseGroup = new OffsetFetchResponseGroup()
+                offsetFetchResponseGroup.setGroupId(groupId)
+                offsetFetchResponseGroup.setTopics(topicPartitionResponses.values.toList.asJava)
+                offsetFetchResponseGroups += offsetFetchResponseGroup
+
+                if (remaining != -1 && remaining <= 0) {
+                  break()
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    val result = new OffsetFetchResponseData
+    result.setGroups(offsetFetchResponseGroups.asJava)
+    result.setNextCursor(cursor)
+    result
+  }
+
   /**
    * The most important guarantee that this API provides is that it should never return a stale offset. i.e., it either
    * returns the current offset or it begins to sync the cache from the log (and returns an error code).
    */
-  def getOffsets(groupId: String, requireStable: Boolean, topicPartitionsOpt: Option[Seq[TopicPartition]]): Map[TopicPartition, PartitionData] = {
+  def getOffsets(
+                  groupId: String, requireStable: Boolean,
+                  topicPartitionsOpt: Option[Seq[TopicPartition]],
+                  partitionFilter: (String, Integer) => Boolean = (_, _) => true,
+                  paginationSizeLimit: Int = -1
+                ): Map[TopicPartition, PartitionData] = {
     trace("Getting offsets of %s for group %s.".format(topicPartitionsOpt.getOrElse("all partitions"), groupId))
     val group = groupMetadataCache.get(groupId)
+    var remaining = paginationSizeLimit
+    val paginationSizeLimitFlag = paginationSizeLimit == -1
+
+    def errorResult(): Map[TopicPartition, PartitionData] = {
+      topicPartitionsOpt.getOrElse(Seq.empty[TopicPartition])
+        .filter(topicPartitions => !partitionFilter(topicPartitions.topic(), topicPartitions.partition()))
+        .sortBy(t => (t.topic(), t.partition()))
+        .take(remaining)
+        .map { topicPartition =>
+          val partitionData = new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
+            Optional.empty(), "", Errors.NONE)
+          topicPartition -> partitionData
+        }.toMap
+    }
+
     if (group == null) {
-      topicPartitionsOpt.getOrElse(Seq.empty[TopicPartition]).map { topicPartition =>
-        val partitionData = new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
-          Optional.empty(), "", Errors.NONE)
-        topicPartition -> partitionData
-      }.toMap
+      errorResult()
     } else {
       group.inLock {
         if (group.is(Dead)) {
-          topicPartitionsOpt.getOrElse(Seq.empty[TopicPartition]).map { topicPartition =>
-            val partitionData = new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
-              Optional.empty(), "", Errors.NONE)
-            topicPartition -> partitionData
-          }.toMap
+          errorResult()
         } else {
           val topicPartitions = topicPartitionsOpt.getOrElse(group.allOffsets.keySet)
+            .toSeq.sortBy(t => (t.topic(), t.partition()))
+          val responseMap = new mutable.HashMap[TopicPartition, PartitionData]
+          val topicPartitionIterator = topicPartitions.iterator
 
-          topicPartitions.map { topicPartition =>
-            if (requireStable && group.hasPendingOffsetCommitsForTopicPartition(topicPartition)) {
-              topicPartition -> new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
-                Optional.empty(), "", Errors.UNSTABLE_OFFSET_COMMIT)
-            } else {
-              val partitionData = group.offset(topicPartition) match {
-                case None =>
-                  new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
-                    Optional.empty(), "", Errors.NONE)
-                case Some(offsetAndMetadata) =>
-                  new PartitionData(offsetAndMetadata.offset,
-                    offsetAndMetadata.leaderEpoch, offsetAndMetadata.metadata, Errors.NONE)
+          while (topicPartitionIterator.hasNext && (paginationSizeLimitFlag || remaining > 0)) {
+            val topicPartition = topicPartitionIterator.next()
+            if (partitionFilter(topicPartition.topic(), topicPartition.partition())) {
+              if (requireStable && group.hasPendingOffsetCommitsForTopicPartition(topicPartition)) {
+                responseMap += topicPartition -> new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
+                  Optional.empty(), "", Errors.UNSTABLE_OFFSET_COMMIT)
+              } else {
+                val partitionData = group.offset(topicPartition) match {
+                  case None =>
+                    new PartitionData(OffsetFetchResponse.INVALID_OFFSET,
+                      Optional.empty(), "", Errors.NONE)
+                  case Some(offsetAndMetadata) =>
+                    new PartitionData(offsetAndMetadata.offset,
+                      offsetAndMetadata.leaderEpoch, offsetAndMetadata.metadata, Errors.NONE)
+                }
+                responseMap += topicPartition -> partitionData
               }
-              topicPartition -> partitionData
+              if (!paginationSizeLimitFlag) {
+                remaining -= 1
+              }
             }
-          }.toMap
+          }
+          responseMap
         }
       }
     }

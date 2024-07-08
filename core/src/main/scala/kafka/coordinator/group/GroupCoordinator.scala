@@ -26,6 +26,7 @@ import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.message.JoinGroupResponseData.JoinGroupResponseMember
 import org.apache.kafka.common.message.LeaveGroupRequestData.MemberIdentity
+import org.apache.kafka.common.message.{OffsetFetchRequestData, OffsetFetchResponseData}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.metrics.stats.Meter
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
@@ -36,7 +37,9 @@ import org.apache.kafka.coordinator.group.{Group, OffsetConfig}
 import org.apache.kafka.server.record.BrokerCompressionType
 import org.apache.kafka.storage.internals.log.VerificationGuard
 
+import java.util
 import scala.annotation.nowarn
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, immutable, mutable}
 import scala.math.max
 
@@ -1099,18 +1102,43 @@ private[group] class GroupCoordinator(
     }
   }
 
+  def getOffsetFetchRequestResponse(
+                                     requests: Seq[OffsetFetchRequestData.OffsetFetchRequestGroup],
+                                     requireStable: Boolean,
+                                     groupPartitionStartIndex: (String, String, Int) => Boolean,
+                                     paginationSizeLimit: Int
+  ): OffsetFetchResponseData = {
+    val invalidResponse = new util.ArrayList[OffsetFetchResponseData.OffsetFetchResponseGroup]()
+    val validRequest = new ArrayBuffer[OffsetFetchRequestData.OffsetFetchRequestGroup]()
+    requests.foreach {request=>
+      validateGroupStatus(request.groupId(), ApiKeys.OFFSET_FETCH) match {
+        case Some(error) =>
+          invalidResponse.add(new OffsetFetchResponseData.OffsetFetchResponseGroup()
+            .setErrorCode(error.code())
+            .setGroupId(request.groupId()))
+        case None =>
+          validRequest += request
+      }
+    }
+    val response = groupManager.getOffsetFetchRequestResponse(validRequest, requireStable, groupPartitionStartIndex, paginationSizeLimit)
+    response.groups().addAll(invalidResponse)
+    response
+  }
+
   def handleFetchOffsets(
-    groupId: String,
-    requireStable: Boolean,
-    partitions: Option[Seq[TopicPartition]] = None
-  ): (Errors, Map[TopicPartition, OffsetFetchResponse.PartitionData]) = {
+                          groupId: String,
+                          requireStable: Boolean,
+                          partitions: Option[Seq[TopicPartition]] = None,
+                          partitionFilter: (String, Integer) => Boolean = (_, _) => true,
+                          paginationSizeLimit: Int = -1
+                        ): (Errors, Map[TopicPartition, OffsetFetchResponse.PartitionData]) = {
 
     validateGroupStatus(groupId, ApiKeys.OFFSET_FETCH) match {
       case Some(error) => error -> Map.empty
       case None =>
         // return offsets blindly regardless the current group state since the group may be using
         // Kafka commit storage without automatic group management
-        (Errors.NONE, groupManager.getOffsets(groupId, requireStable, partitions))
+        (Errors.NONE, groupManager.getOffsets(groupId, requireStable, partitions, partitionFilter, paginationSizeLimit))
     }
   }
 

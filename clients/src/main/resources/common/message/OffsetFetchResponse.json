@@ -36,7 +36,9 @@
   // Version 9 is the first version that can be used with the new consumer group protocol (KIP-848). The response is
   // the same as version 8 but can return STALE_MEMBER_EPOCH and UNKNOWN_MEMBER_ID errors when the new consumer group
   // protocol is used.
-  "validVersions": "0-9",
+  //
+  // Version 10 is adding pagination.
+  "validVersions": "0-10",
   "flexibleVersions": "6+",
   // Supported errors:
   // - GROUP_AUTHORIZATION_FAILED (version 0+)
@@ -94,6 +96,13 @@
       ]},
       { "name": "ErrorCode", "type": "int16", "versions": "8+", "default": "0",
         "about": "The group-level error code, or 0 if there was no error." }
+    ]},
+    { "name": "NextCursor", "type": "OffsetFetchCursor", "versions": "10+", "nullableVersions": "10+", "default": "null",
+     "about": "The next topic and partition index to fetch details for.", "fields": [
+        { "name": "GroupId", "type": "string", "versions": "10+", "about": "The group ID to start with"},
+        { "name": "TopicName", "type": "string", "versions": "10+",
+           "about": "The name for the first topic to process", "entityType": "topicName"},
+        { "name": "PartitionIndex", "type": "int32", "versions": "10+", "about": "The partition index to start with"}
     ]}
   ]
 }

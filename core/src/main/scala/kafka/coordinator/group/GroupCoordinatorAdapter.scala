@@ -19,21 +19,21 @@ package kafka.coordinator.group
 import kafka.common.OffsetAndMetadata
 import kafka.server.{KafkaConfig, ReplicaManager, RequestLocal}
 import kafka.utils.Implicits.MapExtensionMethods
-import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
-import org.apache.kafka.common.message.{ConsumerGroupDescribeResponseData, ConsumerGroupHeartbeatRequestData, ConsumerGroupHeartbeatResponseData, DeleteGroupsResponseData, DescribeGroupsResponseData, HeartbeatRequestData, HeartbeatResponseData, JoinGroupRequestData, JoinGroupResponseData, LeaveGroupRequestData, LeaveGroupResponseData, ListGroupsRequestData, ListGroupsResponseData, OffsetCommitRequestData, OffsetCommitResponseData, OffsetDeleteRequestData, OffsetDeleteResponseData, OffsetFetchRequestData, OffsetFetchResponseData, SyncGroupRequestData, SyncGroupResponseData, TxnOffsetCommitRequestData, TxnOffsetCommitResponseData}
+import org.apache.kafka.common.message._
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
 import org.apache.kafka.common.record.RecordBatch
 import org.apache.kafka.common.requests.{OffsetCommitRequest, RequestContext, TransactionResult}
 import org.apache.kafka.common.utils.{BufferSupplier, Time}
+import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.image.{MetadataDelta, MetadataImage}
 import org.apache.kafka.server.util.FutureUtils
 
 import java.time.Duration
 import java.util
-import java.util.{Optional, OptionalInt, Properties}
 import java.util.concurrent.CompletableFuture
-import java.util.function.IntSupplier
+import java.util.function.{BiPredicate, IntSupplier}
+import java.util.{Optional, OptionalInt, Properties}
 import scala.collection.{immutable, mutable}
 import scala.jdk.CollectionConverters._
 
@@ -307,15 +307,46 @@ private[group] class GroupCoordinatorAdapter(
     )
   }
 
+  override def fetchLimitOffsets(context: RequestContext,
+                                 request: OffsetFetchRequestData.OffsetFetchRequestGroup,
+                                 partitionFilter: BiPredicate[String, Integer],
+                                 requireStable: Boolean,
+                                 paginationSizeLimit: Int
+                                ): CompletableFuture[OffsetFetchResponseData.OffsetFetchResponseGroup] = {
+    val topicPartitions = if (request.topics().isEmpty) {
+      val topicPartitions = new mutable.ArrayBuffer[TopicPartition]()
+      request.topics.forEach { topic =>
+        topic.partitionIndexes.forEach { partition =>
+          topicPartitions += new TopicPartition(topic.name, partition)
+        }
+      }
+      Some(topicPartitions.toSeq)
+    } else {
+      None
+    }
+
+    handleFetchOffset(
+      request.groupId,
+      requireStable,
+      topicPartitions,
+      (topicName, partitionIndex) => partitionFilter.test(topicName, partitionIndex),
+      paginationSizeLimit
+    )
+  }
+
   private def handleFetchOffset(
     groupId: String,
     requireStable: Boolean,
-    partitions: Option[Seq[TopicPartition]]
+    partitions: Option[Seq[TopicPartition]],
+    partitionFilter: (String, Integer) => Boolean = (_, _) => true,
+    paginationSizeLimit: Int = -1
   ): CompletableFuture[OffsetFetchResponseData.OffsetFetchResponseGroup] = {
     val (error, results) = coordinator.handleFetchOffsets(
       groupId,
       requireStable,
-      partitions
+      partitions,
+      partitionFilter,
+      paginationSizeLimit
     )
 
     val future = new CompletableFuture[OffsetFetchResponseData.OffsetFetchResponseGroup]()

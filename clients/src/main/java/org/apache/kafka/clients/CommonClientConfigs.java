@@ -233,6 +233,10 @@ public class CommonClientConfigs {
             "for the client.";
     public static final String DEFAULT_METADATA_RECOVERY_STRATEGY = MetadataRecoveryStrategy.NONE.name;
 
+    public static final String MAX_REQUEST_PAGINATION_SIZE_LIMIT_CONFIG = "max.request.pagination.size.limit";
+    public static final int MAX_REQUEST_PAGINATION_SIZE_LIMIT_DEFAULT = 2000;
+    public static final String MAX_REQUEST_PAGINATION_SIZE_LIMIT_DOC = "The maximum number of pagination items can be served in one request.";
+
     /**
      * Postprocess the configuration so that exponential backoff is disabled when reconnect backoff
      * is explicitly configured but the maximum reconnect backoff is not explicitly configured.

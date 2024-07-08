@@ -70,7 +70,7 @@ import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.{Group, GroupCoordinator}
 import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer._
-import org.apache.kafka.server.common.{MetadataVersion}
+import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.server.common.MetadataVersion.{IBP_0_11_0_IV0, IBP_2_3_IV0}
 import org.apache.kafka.server.record.BrokerCompressionType
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchIsolation, FetchParams, FetchPartitionData}
@@ -81,6 +81,8 @@ import java.time.Duration
 import java.util
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
+import java.util.function.BiPredicate
+import java.util.stream.Collectors
 import java.util.{Collections, Optional, OptionalInt}
 import scala.annotation.nowarn
 import scala.collection.mutable.ArrayBuffer
@@ -1503,6 +1505,112 @@ class KafkaApis(val requestChannel: RequestChannel,
     val groups = offsetFetchRequest.groups()
     val requireStable = offsetFetchRequest.requireStable()
 
+    val cursor = offsetFetchRequest.cursor();
+    val cursorGroupId = if (cursor != null) cursor.groupId() else "";
+    val cursorGroup = new util.ArrayList[OffsetFetchRequestData.OffsetFetchRequestGroup]()
+    if (cursor != null) {
+      var positionTo = false
+      groups.forEach { groupOffsetFetch =>
+        val groupId = groupOffsetFetch.groupId()
+        val cursorGroupIdCompare = groupId.compareTo(cursorGroupId)
+        if (cursorGroupIdCompare >= 0) {
+          cursorGroup.add(groupOffsetFetch)
+        }
+        if (cursorGroupIdCompare == 0) {
+          positionTo = true
+        }
+      }
+      if (!positionTo) {
+        throw new InvalidRequestException("OffsetFetchRequest group list should contain the cursor group: " + cursorGroupId)
+      }
+    } else {
+      cursorGroup.addAll(groups)
+    }
+
+    if (cursor != null && cursor.topicName() == null) {
+      throw new InvalidRequestException("OffsetFetchRequest cursor topicName must be valid: " + cursor)
+    }
+    if (cursor != null && cursor.partitionIndex() < 0) {
+      throw new InvalidRequestException("OffsetFetchRequest cursor partition must be valid: " + cursor)
+    }
+
+    val cursorTopicName = if (cursor != null) cursor.topicName() else "";
+    val cursorPartitionIndex = if (cursor != null) cursor.partitionIndex() else -1;
+    val maxRequestPaginationSizeLimit: Int = Math.max(Math.min(offsetFetchRequest.data().responsePagingationLimit(), config.maxRequestPaginationSizeLimit), 1)
+
+    val needGetData = new util.ArrayList[OffsetFetchRequestData.OffsetFetchRequestGroup](cursorGroup.size)
+    val offsetFetchResponseData = new util.ArrayList[OffsetFetchResponseData.OffsetFetchResponseGroup](cursorGroup.size)
+
+    cursorGroup.sort((x, y) => x.groupId().compareTo(y.groupId()))
+    cursorGroup.forEach(groupOffsetFetch => {
+      if (!authHelper.authorize(request.context, DESCRIBE, GROUP, groupOffsetFetch.groupId())) {
+        offsetFetchResponseData.add(new OffsetFetchResponseData.OffsetFetchResponseGroup()
+          .setGroupId(groupOffsetFetch.groupId)
+          .setErrorCode(Errors.GROUP_AUTHORIZATION_FAILED.code()))
+      } else {
+        needGetData.add(groupOffsetFetch)
+      }
+    })
+
+    val groupPartitionStartIndex: BiPredicate[String, Integer] = (topicName: String, partitionIndex: Integer) => {
+      if (topicName.compareTo(cursorTopicName) >= 0) {
+        partitionIndex > cursorPartitionIndex
+      } else {
+        false
+      }
+    }
+
+    val nextCursor = new OffsetFetchResponseData.OffsetFetchCursor
+    var remain = maxRequestPaginationSizeLimit
+    needGetData.forEach {
+      getOffsetRequest =>
+        val future = groupCoordinator.fetchLimitOffsets(
+          request.context,
+          getOffsetRequest,
+          groupPartitionStartIndex,
+          requireStable,
+          remain
+        )
+
+        val offsetFetchResponse = future.handle[OffsetFetchResponseData.OffsetFetchResponseGroup] { (offsetFetchResponse, exception) =>
+          if (exception != null) {
+            new OffsetFetchResponseData.OffsetFetchResponseGroup()
+              .setGroupId(offsetFetchRequest.groupId)
+              .setErrorCode(Errors.forException(exception).code)
+          } else if (offsetFetchResponse.errorCode() != Errors.NONE.code) {
+            offsetFetchResponse
+          } else {
+            // Clients are not allowed to see offsets for topics that are not authorized for Describe.
+            val (authorizedOffsets, _) = authHelper.partitionSeqByAuthorized(
+              request.context,
+              DESCRIBE,
+              TOPIC,
+              offsetFetchResponse.topics.asScala
+            )(_.name)
+            offsetFetchResponse.setTopics(authorizedOffsets.asJava)
+          }
+        }.get()
+
+        remain -= offsetFetchResponse.topics().stream().collect(Collectors.summingInt(p => p.partitions().size()))
+
+        offsetFetchResponseData.add(offsetFetchResponse)
+        nextCursor.setGroupId(getOffsetRequest.groupId())
+        if (offsetFetchResponse.topics().isEmpty) {
+          val endTopic = offsetFetchResponse.topics().get(offsetFetchResponse.topics().size() - 1)
+          val endPartition = endTopic.partitions().get(endTopic.partitions().size() - 1)
+          nextCursor.setTopicName(endTopic.name)
+          nextCursor.setPartitionIndex(endPartition.partitionIndex)
+        }
+    }
+    requestHelper.sendMaybeThrottle(request, new OffsetFetchResponse(offsetFetchResponseData, request.context.apiVersion))
+    CompletableFuture.completedFuture[Unit](())
+  }
+
+  private def handleOffsetFetchRequestFromCoordinatorV1(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val offsetFetchRequest = request.body[OffsetFetchRequest]
+    val groups = offsetFetchRequest.groups()
+    val requireStable = offsetFetchRequest.requireStable()
+
     val futures = new mutable.ArrayBuffer[CompletableFuture[OffsetFetchResponseData.OffsetFetchResponseGroup]](groups.size)
     groups.forEach { groupOffsetFetch =>
       val isAllPartitions = groupOffsetFetch.topics == null
@@ -1533,10 +1641,10 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   private def fetchAllOffsetsForGroup(
-    requestContext: RequestContext,
-    offsetFetchRequest: OffsetFetchRequestData.OffsetFetchRequestGroup,
-    requireStable: Boolean
-  ): CompletableFuture[OffsetFetchResponseData.OffsetFetchResponseGroup] = {
+                                       requestContext: RequestContext,
+                                       offsetFetchRequest: OffsetFetchRequestData.OffsetFetchRequestGroup,
+                                       requireStable: Boolean
+                                     ): CompletableFuture[OffsetFetchResponseData.OffsetFetchResponseGroup] = {
     groupCoordinator.fetchAllOffsets(
       requestContext,
       offsetFetchRequest,
@@ -1562,10 +1670,10 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   private def fetchOffsetsForGroup(
-    requestContext: RequestContext,
-    offsetFetchRequest: OffsetFetchRequestData.OffsetFetchRequestGroup,
-    requireStable: Boolean
-  ): CompletableFuture[OffsetFetchResponseData.OffsetFetchResponseGroup] = {
+                                    requestContext: RequestContext,
+                                    offsetFetchRequest: OffsetFetchRequestData.OffsetFetchRequestGroup,
+                                    requireStable: Boolean
+                                  ): CompletableFuture[OffsetFetchResponseData.OffsetFetchResponseGroup] = {
     // Clients are not allowed to see offsets for topics that are not authorized for Describe.
     val (authorizedTopics, unauthorizedTopics) = authHelper.partitionSeqByAuthorized(
       requestContext,

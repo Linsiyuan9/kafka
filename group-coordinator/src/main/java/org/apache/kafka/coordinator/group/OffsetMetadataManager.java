@@ -56,8 +56,10 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -65,6 +67,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 
 import static org.apache.kafka.common.requests.OffsetFetchResponse.INVALID_OFFSET;
@@ -787,67 +790,101 @@ public class OffsetMetadataManager {
             .setTopics(topicResponses);
     }
 
-    /**
-     * Fetch all offsets for a given Group.
-     *
-     * @param request               The OffsetFetchRequestGroup request.
-     * @param lastCommittedOffset   The last committed offsets in the timeline.
-     *
-     * @return A List of OffsetFetchResponseTopics response.
-     */
     public OffsetFetchResponseData.OffsetFetchResponseGroup fetchAllOffsets(
         OffsetFetchRequestData.OffsetFetchRequestGroup request,
         long lastCommittedOffset
     ) throws ApiException {
+        return fetchLimitOffsets(request, (o1, o2) -> true, lastCommittedOffset, -1);
+    }
+
+    /**
+     * Fetch limit offsets for a given Group.
+     * After topicName and partitionIndex are sorted, data is filtered through partitionFilter,
+     * and the number of partitions is obtained by paginationSizeLimit.
+     *
+     * @param request             The OffsetFetchRequestGroup request.
+     * @param partitionFilter     The start partition of the page is determined.
+     * @param lastCommittedOffset The last committed offsets in the timeline.
+     * @param paginationSizeLimit The max number of partitions to return.
+     * @return A List of OffsetFetchResponseTopics response.
+     */
+    public OffsetFetchResponseData.OffsetFetchResponseGroup fetchLimitOffsets(
+            OffsetFetchRequestData.OffsetFetchRequestGroup request,
+            BiPredicate<String, Integer> partitionFilter,
+            long lastCommittedOffset,
+            int paginationSizeLimit) {
         final boolean requireStable = lastCommittedOffset == Long.MAX_VALUE;
 
         try {
             validateOffsetFetch(request, lastCommittedOffset);
         } catch (GroupIdNotFoundException ex) {
             return new OffsetFetchResponseData.OffsetFetchResponseGroup()
-                .setGroupId(request.groupId())
-                .setTopics(Collections.emptyList());
+                    .setGroupId(request.groupId())
+                    .setTopics(Collections.emptyList());
         }
+
+        AtomicInteger remain = new AtomicInteger(paginationSizeLimit);
+        boolean paginationSizeLimitFlag = paginationSizeLimit == -1;
 
         final List<OffsetFetchResponseData.OffsetFetchResponseTopics> topicResponses = new ArrayList<>();
         final TimelineHashMap<String, TimelineHashMap<Integer, OffsetAndMetadata>> groupOffsets =
-            offsets.offsetsByGroup.get(request.groupId(), lastCommittedOffset);
+                offsets.offsetsByGroup.get(request.groupId(), lastCommittedOffset);
 
         if (groupOffsets != null) {
-            groupOffsets.entrySet(lastCommittedOffset).forEach(topicEntry -> {
+            Iterator<Map.Entry<String, TimelineHashMap<Integer, OffsetAndMetadata>>> topicIterator = groupOffsets
+                    .entrySet(lastCommittedOffset)
+                    .stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .iterator();
+            while (topicIterator.hasNext()) {
+                Map.Entry<String, TimelineHashMap<Integer, OffsetAndMetadata>> topicEntry = topicIterator.next();
                 final String topic = topicEntry.getKey();
                 final TimelineHashMap<Integer, OffsetAndMetadata> topicOffsets = topicEntry.getValue();
 
                 final OffsetFetchResponseData.OffsetFetchResponseTopics topicResponse =
-                    new OffsetFetchResponseData.OffsetFetchResponseTopics().setName(topic);
+                        new OffsetFetchResponseData.OffsetFetchResponseTopics().setName(topic);
                 topicResponses.add(topicResponse);
 
-                topicOffsets.entrySet(lastCommittedOffset).forEach(partitionEntry -> {
+                Iterator<Map.Entry<Integer, OffsetAndMetadata>> partitionIterator = topicOffsets
+                        .entrySet(lastCommittedOffset)
+                        .stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .iterator();
+                while (partitionIterator.hasNext()) {
+                    Map.Entry<Integer, OffsetAndMetadata> partitionEntry = partitionIterator.next();
                     final int partition = partitionEntry.getKey();
                     final OffsetAndMetadata offsetAndMetadata = partitionEntry.getValue();
-
-                    if (requireStable && hasPendingTransactionalOffsets(request.groupId(), topic, partition)) {
-                        topicResponse.partitions().add(new OffsetFetchResponseData.OffsetFetchResponsePartitions()
-                            .setPartitionIndex(partition)
-                            .setErrorCode(Errors.UNSTABLE_OFFSET_COMMIT.code())
-                            .setCommittedOffset(INVALID_OFFSET)
-                            .setCommittedLeaderEpoch(-1)
-                            .setMetadata(""));
-                    } else {
-                        topicResponse.partitions().add(new OffsetFetchResponseData.OffsetFetchResponsePartitions()
-                            .setPartitionIndex(partition)
-                            .setCommittedOffset(offsetAndMetadata.committedOffset)
-                            .setCommittedLeaderEpoch(offsetAndMetadata.leaderEpoch.orElse(-1))
-                            .setMetadata(offsetAndMetadata.metadata));
+                    if (partitionFilter.test(topic, partition)) {
+                        if (requireStable && hasPendingTransactionalOffsets(request.groupId(), topic, partition)) {
+                            topicResponse.partitions().add(new OffsetFetchResponseData.OffsetFetchResponsePartitions()
+                                    .setPartitionIndex(partition)
+                                    .setErrorCode(Errors.UNSTABLE_OFFSET_COMMIT.code())
+                                    .setCommittedOffset(INVALID_OFFSET)
+                                    .setCommittedLeaderEpoch(-1)
+                                    .setMetadata(""));
+                        } else {
+                            topicResponse.partitions().add(new OffsetFetchResponseData.OffsetFetchResponsePartitions()
+                                    .setPartitionIndex(partition)
+                                    .setCommittedOffset(offsetAndMetadata.committedOffset)
+                                    .setCommittedLeaderEpoch(offsetAndMetadata.leaderEpoch.orElse(-1))
+                                    .setMetadata(offsetAndMetadata.metadata));
+                        }
                     }
-                });
-            });
+                    if (!paginationSizeLimitFlag && remain.decrementAndGet() == 0) {
+                        break;
+                    }
+                }
+                if (!paginationSizeLimitFlag && remain.get() == 0) {
+                    break;
+                }
+            }
         }
 
         return new OffsetFetchResponseData.OffsetFetchResponseGroup()
-            .setGroupId(request.groupId())
-            .setTopics(topicResponses);
+                .setGroupId(request.groupId())
+                .setTopics(topicResponses);
     }
+
 
     /**
      * Remove expired offsets for the given group.

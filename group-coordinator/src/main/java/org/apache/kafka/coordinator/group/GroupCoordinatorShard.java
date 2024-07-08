@@ -83,6 +83,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiPredicate;
 
 /**
  * The group coordinator shard is a replicated state machine that manages the metadata of all
@@ -444,6 +445,25 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
         long epoch
     ) throws ApiException {
         return offsetMetadataManager.fetchAllOffsets(request, epoch);
+    }
+
+    /**
+     * Fetch limit offsets for a given group.
+     *
+     * @param request             The OffsetFetchRequestGroup request.
+     * @param partitionFilter     The start partition of the page is determined.
+     * @param epoch The last committed offsets in the timeline.
+     * @param paginationSizeLimit The max number of partitions to return.
+     *
+     * @return A List of OffsetFetchResponseTopics response.
+     */
+    public OffsetFetchResponseData.OffsetFetchResponseGroup fetchLimitOffsets(
+            OffsetFetchRequestData.OffsetFetchRequestGroup request,
+            BiPredicate<String,Integer> partitionFilter,
+            long epoch,
+            int paginationSizeLimit
+    ) throws ApiException {
+        return offsetMetadataManager.fetchLimitOffsets(request, partitionFilter, epoch, paginationSizeLimit);
     }
 
     /**

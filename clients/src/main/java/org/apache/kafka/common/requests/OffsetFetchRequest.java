@@ -72,6 +72,29 @@ public class OffsetFetchRequest extends AbstractRequest {
                        boolean requireStable,
                        List<TopicPartition> partitions,
                        boolean throwOnFetchStableOffsetsUnsupported) {
+            this(
+                    groupId,
+                    memberId,
+                    memberEpoch,
+                    requireStable,
+                    partitions,
+                    throwOnFetchStableOffsetsUnsupported,
+                    -1,
+                    null,
+                    null,
+                    -1);
+        }
+
+        public Builder(String groupId,
+                       String memberId,
+                       int memberEpoch,
+                       boolean requireStable,
+                       List<TopicPartition> partitions,
+                       boolean throwOnFetchStableOffsetsUnsupported,
+                       int responsePaginationLimit,
+                       String cursorGroupId,
+                       String cursorTopicName,
+                       int cursorPartitionIndex) {
             super(ApiKeys.OFFSET_FETCH);
 
             OffsetFetchRequestData.OffsetFetchRequestGroup group =
@@ -95,9 +118,16 @@ public class OffsetFetchRequest extends AbstractRequest {
                 group.setTopics(ALL_TOPIC_PARTITIONS_BATCH);
             }
 
+            OffsetFetchRequestData.OffsetFetchCursor offsetFetchCursor = new OffsetFetchRequestData.OffsetFetchCursor();
+            offsetFetchCursor.setGroupId(cursorGroupId);
+            offsetFetchCursor.setTopicName(cursorTopicName);
+            offsetFetchCursor.setPartitionIndex(cursorPartitionIndex);
+
             this.data = new OffsetFetchRequestData()
                 .setRequireStable(requireStable)
-                .setGroups(Collections.singletonList(group));
+                .setGroups(Collections.singletonList(group))
+                .setResponsePagingationLimit(responsePaginationLimit)
+                .setCursor(offsetFetchCursor);
             this.throwOnFetchStableOffsetsUnsupported = throwOnFetchStableOffsetsUnsupported;
         }
 
@@ -279,6 +309,10 @@ public class OffsetFetchRequest extends AbstractRequest {
             .stream()
             .map(OffsetFetchRequestGroup::groupId)
             .collect(Collectors.toList());
+    }
+
+    public OffsetFetchRequestData.OffsetFetchCursor cursor() {
+        return data.cursor();
     }
 
     private OffsetFetchRequest(OffsetFetchRequestData data, short version) {

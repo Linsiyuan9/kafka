@@ -52,6 +52,8 @@ import java.util.OptionalInt;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BiPredicate;
+import java.util.function.Function;
 import java.util.function.IntSupplier;
 
 /**
@@ -218,6 +220,24 @@ public interface GroupCoordinator {
         RequestContext context,
         OffsetFetchRequestData.OffsetFetchRequestGroup request,
         boolean requireStable
+    );
+
+    /**
+     * Fetch all offsets for a given Group.
+     *
+     * @param context           The request context.
+     * @param request           The OffsetFetchRequestGroup request.
+     * @param paginationSizeLimit  The max number of partitions to return.
+     *
+     * @return  A future yielding the results.
+     *          The error codes of the results are set to indicate the errors occurred during the execution.
+     */
+    CompletableFuture<OffsetFetchResponseData.OffsetFetchResponseGroup> fetchLimitOffsets(
+            RequestContext context,
+            OffsetFetchRequestData.OffsetFetchRequestGroup request,
+            BiPredicate<String,Integer> partitionFilter,
+            boolean requireStable,
+            int paginationSizeLimit
     );
 
     /**
