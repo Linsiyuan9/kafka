@@ -16,7 +16,20 @@
  */
 package org.apache.kafka.streams.processor.assignment;
 
-import static org.apache.kafka.streams.processor.internals.assignment.RackAwareTaskAssignor.STANDBY_OPTIMIZER_MAX_ITERATION;
+import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.processor.TaskId;
+import org.apache.kafka.streams.processor.assignment.KafkaStreamsAssignment.AssignedTask;
+import org.apache.kafka.streams.processor.assignment.TaskAssignor.AssignmentError;
+import org.apache.kafka.streams.processor.assignment.TaskAssignor.TaskAssignment;
+import org.apache.kafka.streams.processor.internals.assignment.ConstrainedPrioritySet;
+import org.apache.kafka.streams.processor.internals.assignment.Graph;
+import org.apache.kafka.streams.processor.internals.assignment.MinTrafficGraphConstructor;
+import org.apache.kafka.streams.processor.internals.assignment.RackAwareGraphConstructor;
+import org.apache.kafka.streams.processor.internals.assignment.RackAwareGraphConstructorFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -33,19 +46,8 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.processor.TaskId;
-import org.apache.kafka.streams.processor.assignment.KafkaStreamsAssignment.AssignedTask;
-import org.apache.kafka.streams.processor.assignment.TaskAssignor.AssignmentError;
-import org.apache.kafka.streams.processor.assignment.TaskAssignor.TaskAssignment;
-import org.apache.kafka.streams.processor.internals.assignment.ConstrainedPrioritySet;
-import org.apache.kafka.streams.processor.internals.assignment.Graph;
-import org.apache.kafka.streams.processor.internals.assignment.MinTrafficGraphConstructor;
-import org.apache.kafka.streams.processor.internals.assignment.RackAwareGraphConstructor;
-import org.apache.kafka.streams.processor.internals.assignment.RackAwareGraphConstructorFactory;
-import org.apache.kafka.streams.StreamsConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import static org.apache.kafka.streams.processor.internals.assignment.RackAwareTaskAssignor.STANDBY_OPTIMIZER_MAX_ITERATION;
 
 /**
  * A set of utilities to help implement task assignment via the {@link TaskAssignor}
@@ -729,7 +731,7 @@ public final class TaskAssignmentUtils {
         final ConstrainedPrioritySet standbyTaskClientsByTaskLoad = standbyTaskPriorityListByLoad(streamStates, assignments);
 
         final Set<TaskId> statefulTaskIds = applicationState.allTasks().values().stream()
-            .filter(TaskInfo::isStateful)
+            .filter(taskInfo -> taskInfo.topicPartitions().stream().anyMatch(TaskTopicPartition::isChangelog))
             .map(TaskInfo::id)
             .collect(Collectors.toSet());
         final Map<TaskId, Integer> tasksToRemainingStandbys = statefulTaskIds.stream()
@@ -775,7 +777,7 @@ public final class TaskAssignmentUtils {
         final Map<ProcessId, KafkaStreamsState> streamStates = applicationState.kafkaStreamsStates(false);
 
         final Set<TaskId> statefulTaskIds = applicationState.allTasks().values().stream()
-            .filter(TaskInfo::isStateful)
+            .filter(taskInfo -> taskInfo.topicPartitions().stream().anyMatch(TaskTopicPartition::isChangelog))
             .map(TaskInfo::id)
             .collect(Collectors.toSet());
         final Map<TaskId, Integer> tasksToRemainingStandbys = statefulTaskIds.stream()

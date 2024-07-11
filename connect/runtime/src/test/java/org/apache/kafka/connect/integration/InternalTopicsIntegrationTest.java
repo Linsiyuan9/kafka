@@ -16,29 +16,34 @@
  */
 package org.apache.kafka.connect.integration;
 
+import org.apache.kafka.common.config.TopicConfig;
+import org.apache.kafka.connect.runtime.distributed.DistributedConfig;
+import org.apache.kafka.connect.util.clusters.EmbeddedConnectCluster;
+import org.apache.kafka.connect.util.clusters.WorkerHandle;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
-import org.apache.kafka.common.config.TopicConfig;
-import org.apache.kafka.connect.runtime.distributed.DistributedConfig;
-import org.apache.kafka.connect.util.clusters.EmbeddedConnectCluster;
-import org.apache.kafka.connect.util.clusters.WorkerHandle;
-import org.apache.kafka.test.IntegrationTest;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import javax.ws.rs.core.Response;
 
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Integration test for the creation of internal topics.
  */
-@Category(IntegrationTest.class)
+@Tag("integration")
 public class InternalTopicsIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(InternalTopicsIntegrationTest.class);
@@ -47,13 +52,13 @@ public class InternalTopicsIntegrationTest {
     Map<String, String> workerProps = new HashMap<>();
     Properties brokerProps = new Properties();
 
-    @Before
+    @BeforeEach
     public void setup() {
         // setup Kafka broker properties
         brokerProps.put("auto.create.topics.enable", String.valueOf(false));
     }
 
-    @After
+    @AfterEach
     public void close() {
         // stop all Connect, Kafka and Zk threads.
         connect.stop();
@@ -135,7 +140,19 @@ public class InternalTopicsIntegrationTest {
         log.info("Completed startup of {} Kafka broker. Expected Connect worker to fail", numBrokers);
 
         // Try to start a worker
-        connect.addWorker();
+        WorkerHandle worker = connect.addWorker();
+
+        connect.requestTimeout(1000);
+        try (Response response = connect.healthCheck(worker)) {
+            assertEquals(Response.Status.SERVICE_UNAVAILABLE.getStatusCode(), response.getStatus());
+            assertNotNull(response.getEntity());
+            String body = response.getEntity().toString();
+            assertTrue(
+                    body.contains("The worker is currently initializing and reading to the end of internal topics"),
+                    "Body did not contain expected message detailing the worker's in-progress operation: " + body
+            );
+        }
+        connect.resetRequestTimeout();
 
         // Verify that the offset and config topic don't exist;
         // the status topic may have been created if timing was right but we don't care
@@ -185,9 +202,9 @@ public class InternalTopicsIntegrationTest {
 
         // Try to start one worker, with three bad topics
         WorkerHandle worker = connect.addWorker(); // should have failed to start before returning
-        assertFalse(worker.isRunning());
-        assertFalse(connect.allWorkersRunning());
-        assertFalse(connect.anyWorkersRunning());
+        assertFalse(connect.isHealthy(worker));
+        assertFalse(connect.allWorkersHealthy());
+        assertFalse(connect.anyWorkersHealthy());
         connect.removeWorker(worker);
 
         // We rely upon the fact that we can change the worker properties before the workers are started
@@ -195,9 +212,9 @@ public class InternalTopicsIntegrationTest {
 
         // Try to start one worker, with two bad topics remaining
         worker = connect.addWorker(); // should have failed to start before returning
-        assertFalse(worker.isRunning());
-        assertFalse(connect.allWorkersRunning());
-        assertFalse(connect.anyWorkersRunning());
+        assertFalse(connect.isHealthy(worker));
+        assertFalse(connect.allWorkersHealthy());
+        assertFalse(connect.anyWorkersHealthy());
         connect.removeWorker(worker);
 
         // We rely upon the fact that we can change the worker properties before the workers are started
@@ -205,9 +222,9 @@ public class InternalTopicsIntegrationTest {
 
         // Try to start one worker, with one bad topic remaining
         worker = connect.addWorker(); // should have failed to start before returning
-        assertFalse(worker.isRunning());
-        assertFalse(connect.allWorkersRunning());
-        assertFalse(connect.anyWorkersRunning());
+        assertFalse(connect.isHealthy(worker));
+        assertFalse(connect.allWorkersHealthy());
+        assertFalse(connect.anyWorkersHealthy());
         connect.removeWorker(worker);
         // We rely upon the fact that we can change the worker properties before the workers are started
         workerProps.put(DistributedConfig.STATUS_STORAGE_TOPIC_CONFIG, "good-status");

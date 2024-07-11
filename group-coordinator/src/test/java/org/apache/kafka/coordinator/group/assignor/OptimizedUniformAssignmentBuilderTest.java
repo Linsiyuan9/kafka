@@ -20,11 +20,12 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.coordinator.group.api.assignor.GroupAssignment;
 import org.apache.kafka.coordinator.group.api.assignor.GroupSpec;
 import org.apache.kafka.coordinator.group.api.assignor.PartitionAssignorException;
-import org.apache.kafka.coordinator.group.consumer.Assignment;
-import org.apache.kafka.coordinator.group.consumer.GroupSpecImpl;
-import org.apache.kafka.coordinator.group.consumer.MemberSubscriptionAndAssignmentImpl;
-import org.apache.kafka.coordinator.group.consumer.SubscribedTopicDescriberImpl;
-import org.apache.kafka.coordinator.group.consumer.TopicMetadata;
+import org.apache.kafka.coordinator.group.modern.Assignment;
+import org.apache.kafka.coordinator.group.modern.GroupSpecImpl;
+import org.apache.kafka.coordinator.group.modern.MemberSubscriptionAndAssignmentImpl;
+import org.apache.kafka.coordinator.group.modern.SubscribedTopicDescriberImpl;
+import org.apache.kafka.coordinator.group.modern.TopicMetadata;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -39,10 +40,10 @@ import java.util.TreeMap;
 
 import static org.apache.kafka.common.utils.Utils.mkSet;
 import static org.apache.kafka.coordinator.group.AssignmentTestUtil.assertAssignment;
+import static org.apache.kafka.coordinator.group.AssignmentTestUtil.invertedTargetAssignment;
 import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkAssignment;
 import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkOrderedAssignment;
 import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkTopicAssignment;
-import static org.apache.kafka.coordinator.group.AssignmentTestUtil.invertedTargetAssignment;
 import static org.apache.kafka.coordinator.group.CoordinatorRecordHelpersTest.mkMapOfPartitionRacks;
 import static org.apache.kafka.coordinator.group.api.assignor.SubscriptionType.HOMOGENEOUS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -78,6 +79,7 @@ public class OptimizedUniformAssignmentBuilderTest {
         Map<String, MemberSubscriptionAndAssignmentImpl> members = Collections.singletonMap(
             memberA,
             new MemberSubscriptionAndAssignmentImpl(
+                Optional.empty(),
                 Optional.empty(),
                 Collections.emptySet(),
                 Assignment.EMPTY
@@ -116,6 +118,7 @@ public class OptimizedUniformAssignmentBuilderTest {
             memberA,
             new MemberSubscriptionAndAssignmentImpl(
                 Optional.empty(),
+                Optional.empty(),
                 Collections.singleton(topic2Uuid),
                 Assignment.EMPTY
             )
@@ -151,11 +154,13 @@ public class OptimizedUniformAssignmentBuilderTest {
 
         members.put(memberA, new MemberSubscriptionAndAssignmentImpl(
             Optional.empty(),
+            Optional.empty(),
             mkSet(topic1Uuid, topic3Uuid),
             Assignment.EMPTY
         ));
 
         members.put(memberB, new MemberSubscriptionAndAssignmentImpl(
+            Optional.empty(),
             Optional.empty(),
             mkSet(topic1Uuid, topic3Uuid),
             Assignment.EMPTY
@@ -200,17 +205,20 @@ public class OptimizedUniformAssignmentBuilderTest {
 
         members.put(memberA, new MemberSubscriptionAndAssignmentImpl(
             Optional.empty(),
+            Optional.empty(),
             Collections.singleton(topic3Uuid),
             Assignment.EMPTY
         ));
 
         members.put(memberB, new MemberSubscriptionAndAssignmentImpl(
             Optional.empty(),
+            Optional.empty(),
             Collections.singleton(topic3Uuid),
             Assignment.EMPTY
         ));
 
         members.put(memberC, new MemberSubscriptionAndAssignmentImpl(
+            Optional.empty(),
             Optional.empty(),
             Collections.singleton(topic3Uuid),
             Assignment.EMPTY
@@ -261,6 +269,7 @@ public class OptimizedUniformAssignmentBuilderTest {
         for (int i = 1; i < 50; i++) {
             members.put("member" + i, new MemberSubscriptionAndAssignmentImpl(
                 Optional.empty(),
+                Optional.empty(),
                 topicMetadata.keySet(),
                 Assignment.EMPTY
             ));
@@ -301,6 +310,7 @@ public class OptimizedUniformAssignmentBuilderTest {
 
         members.put(memberA, new MemberSubscriptionAndAssignmentImpl(
             Optional.empty(),
+            Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             new Assignment(mkOrderedAssignment(
                 mkTopicAssignment(topic1Uuid, 0, 1),
@@ -309,6 +319,7 @@ public class OptimizedUniformAssignmentBuilderTest {
         ));
 
         members.put(memberB, new MemberSubscriptionAndAssignmentImpl(
+            Optional.empty(),
             Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             new Assignment(mkOrderedAssignment(
@@ -364,6 +375,7 @@ public class OptimizedUniformAssignmentBuilderTest {
 
         members.put(memberA, new MemberSubscriptionAndAssignmentImpl(
             Optional.empty(),
+            Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             new Assignment(mkOrderedAssignment(
                 mkTopicAssignment(topic1Uuid, 0, 2),
@@ -372,6 +384,7 @@ public class OptimizedUniformAssignmentBuilderTest {
         ));
 
         members.put(memberB, new MemberSubscriptionAndAssignmentImpl(
+            Optional.empty(),
             Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             new Assignment(mkOrderedAssignment(
@@ -426,6 +439,7 @@ public class OptimizedUniformAssignmentBuilderTest {
 
         members.put(memberA, new MemberSubscriptionAndAssignmentImpl(
             Optional.empty(),
+            Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             new Assignment(mkOrderedAssignment(
                 mkTopicAssignment(topic1Uuid, 0, 2),
@@ -434,6 +448,7 @@ public class OptimizedUniformAssignmentBuilderTest {
         ));
 
         members.put(memberB, new MemberSubscriptionAndAssignmentImpl(
+            Optional.empty(),
             Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             new Assignment(mkOrderedAssignment(
@@ -444,6 +459,7 @@ public class OptimizedUniformAssignmentBuilderTest {
 
         // Add a new member to trigger a re-assignment.
         members.put(memberC, new MemberSubscriptionAndAssignmentImpl(
+            Optional.empty(),
             Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             Assignment.EMPTY
@@ -497,6 +513,7 @@ public class OptimizedUniformAssignmentBuilderTest {
 
         members.put(memberA, new MemberSubscriptionAndAssignmentImpl(
             Optional.empty(),
+            Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             new Assignment(mkAssignment(
                 mkTopicAssignment(topic1Uuid, 0),
@@ -505,6 +522,7 @@ public class OptimizedUniformAssignmentBuilderTest {
         ));
 
         members.put(memberB, new MemberSubscriptionAndAssignmentImpl(
+            Optional.empty(),
             Optional.empty(),
             mkSet(topic1Uuid, topic2Uuid),
             new Assignment(mkAssignment(
@@ -562,6 +580,7 @@ public class OptimizedUniformAssignmentBuilderTest {
 
         members.put(memberA, new MemberSubscriptionAndAssignmentImpl(
             Optional.empty(),
+            Optional.empty(),
             Collections.singleton(topic2Uuid),
             new Assignment(mkAssignment(
                 mkTopicAssignment(topic1Uuid, 0),
@@ -570,6 +589,7 @@ public class OptimizedUniformAssignmentBuilderTest {
         ));
 
         members.put(memberB, new MemberSubscriptionAndAssignmentImpl(
+            Optional.empty(),
             Optional.empty(),
             Collections.singleton(topic2Uuid),
             new Assignment(mkAssignment(
