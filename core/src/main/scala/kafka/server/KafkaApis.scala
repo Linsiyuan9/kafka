@@ -1321,12 +1321,18 @@ class KafkaApis(val requestChannel: RequestChannel,
     val unknownTopicIdsTopicMetadata = unknownTopicIds.map(topicId =>
         metadataResponseTopic(Errors.UNKNOWN_TOPIC_ID, null, topicId, isInternal = false, util.Collections.emptyList())).toSeq
 
-    val topics = if (metadataRequest.isAllTopics)
+    var topics = if (metadataRequest.isAllTopics)
       metadataCache.getAllTopics()
     else if (useTopicId)
       knownTopicNames
     else
       metadataRequest.topics.asScala.toSet
+
+    val cursor = metadataRequest.cursor()
+    if (cursor != null) {
+      val cursorTopicName = if (cursor.topicName() != null) cursor.topicName() else ""
+      topics = topics.filter(topic => topic.compare(cursorTopicName) >= 0).toSet
+    }
 
     val authorizedForDescribeTopics = authHelper.filterByAuthorized(request.context, DESCRIBE, TOPIC,
       topics, logIfDenied = !metadataRequest.isAllTopics)(identity)

@@ -191,6 +191,10 @@ public class MetadataRequest extends AbstractRequest {
         return data.allowAutoTopicCreation();
     }
 
+    public MetadataRequestData.OffsetFetchCursor cursor() {
+        return data.cursor();
+    }
+
     public static MetadataRequest parse(ByteBuffer buffer, short version) {
         return new MetadataRequest(new MetadataRequestData(new ByteBufferAccessor(buffer), version), version);
     }
