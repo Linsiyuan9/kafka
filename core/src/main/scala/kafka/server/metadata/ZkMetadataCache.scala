@@ -35,7 +35,7 @@ import org.apache.kafka.common.message.UpdateMetadataRequestData.{UpdateMetadata
 import org.apache.kafka.common.{Cluster, Node, PartitionInfo, TopicPartition, Uuid}
 import org.apache.kafka.common.message.MetadataResponseData.MetadataResponseTopic
 import org.apache.kafka.common.message.MetadataResponseData.MetadataResponsePartition
-import org.apache.kafka.common.message.UpdateMetadataRequestData
+import org.apache.kafka.common.message.{MetadataResponseData, UpdateMetadataRequestData}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{AbstractControlRequest, ApiVersionsResponse, MetadataResponse, UpdateMetadataRequest}
@@ -45,6 +45,7 @@ import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
 import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
 import scala.concurrent.TimeoutException
 import scala.math.max
+import scala.util.control.Breaks.{break, breakable}
 
 // Raised whenever there was an error in updating the FinalizedFeatureCache with features.
 class FeatureCacheUpdateException(message: String) extends RuntimeException(message) {
@@ -302,6 +303,33 @@ class ZkMetadataCache(
           .setPartitions(partitionMetadata.toBuffer.asJava)
       }
     }
+  }
+
+  def getTopicMetadata(topic: String,
+                       listenerName: ListenerName,
+                       maximumNumberOfPartitions: Int,
+                       errorUnavailableEndpoints: Boolean = false,
+                       errorUnavailableListeners: Boolean = false): MetadataResponseTopic = {
+    val snapshot = metadataSnapshot
+    var remainingPartition = maximumNumberOfPartitions
+    getPartitionMetadata(snapshot, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners).map { partitionMetadata =>
+      val partitions = new util.ArrayList[MetadataResponsePartition](Math.min(partitionMetadata.size, remainingPartition))
+
+      breakable {
+        partitionMetadata.foreach { partitionMetadata =>
+          partitions.add(partitionMetadata)
+          if (remainingPartition -= 1 == 0)
+            break
+        }
+      }
+
+      new MetadataResponseTopic()
+        .setErrorCode(Errors.NONE.code)
+        .setName(topic)
+        .setTopicId(snapshot.topicIds.getOrElse(topic, Uuid.ZERO_UUID))
+        .setIsInternal(Topic.isInternal(topic))
+        .setPartitions(partitions)
+    }.get
   }
 
   def topicNamesToIds(): util.Map[String, Uuid] = {
