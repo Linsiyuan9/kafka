@@ -205,8 +205,12 @@ class ZkMetadataCache(
   // errorUnavailableEndpoints exists to support v0 MetadataResponses
   // If errorUnavailableListeners=true, return LISTENER_NOT_FOUND if listener is missing on the broker.
   // Otherwise, return LEADER_NOT_AVAILABLE for broker unavailable and missing listener (Metadata response v5 and below).
-  private def getPartitionMetadata(snapshot: MetadataSnapshot, topic: String, listenerName: ListenerName, errorUnavailableEndpoints: Boolean,
-                                   errorUnavailableListeners: Boolean, partitionStartIndex: Int = 0,
+  private def getPartitionMetadata(snapshot: MetadataSnapshot,
+                                   topic: String,
+                                   listenerName: ListenerName,
+                                   errorUnavailableEndpoints: Boolean,
+                                   errorUnavailableListeners: Boolean,
+                                   partitionStartIndex: Int = 0,
                                    maximumNumberOfPartitions: Int = -1): Option[Iterable[MetadataResponsePartition]] = {
     var remaining = maximumNumberOfPartitions
     snapshot.partitionStates.get(topic).map { partitions =>
@@ -319,31 +323,22 @@ class ZkMetadataCache(
     }
   }
 
-  def getTopicMetadata(topic: String,
+  def getMetadataResponseTopic(topic: String,
                        listenerName: ListenerName,
-                       maximumNumberOfPartitions: Int,
                        errorUnavailableEndpoints: Boolean = false,
-                       errorUnavailableListeners: Boolean = false): MetadataResponseTopic = {
+                       errorUnavailableListeners: Boolean = false,
+                       partitionStartIndex: Int,
+                       maximumNumberOfPartitions: Int): Option[MetadataResponseTopic] = {
     val snapshot = metadataSnapshot
-    var remainingPartition = maximumNumberOfPartitions
-    getPartitionMetadata(snapshot, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners).map { partitionMetadata =>
-      val partitions = new util.ArrayList[MetadataResponsePartition](Math.min(partitionMetadata.size, remainingPartition))
-
-      breakable {
-        partitionMetadata.foreach { partitionMetadata =>
-          partitions.add(partitionMetadata)
-          if (remainingPartition -= 1 == 0)
-            break
-        }
-      }
-
+    getPartitionMetadata(snapshot, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners,
+      partitionStartIndex, maximumNumberOfPartitions).map { partitionMetadata =>
       new MetadataResponseTopic()
         .setErrorCode(Errors.NONE.code)
         .setName(topic)
         .setTopicId(snapshot.topicIds.getOrElse(topic, Uuid.ZERO_UUID))
         .setIsInternal(Topic.isInternal(topic))
-        .setPartitions(partitions)
-    }.get
+        .setPartitions(partitionMetadata.toBuffer.asJava)
+    }
   }
 
   def topicNamesToIds(): util.Map[String, Uuid] = {

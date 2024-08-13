@@ -57,12 +57,12 @@ trait MetadataCache {
     errorUnavailableEndpoints: Boolean = false,
     errorUnavailableListeners: Boolean = false): collection.Seq[MetadataResponseData.MetadataResponseTopic]
 
-  def getTopicMetadata(
-                        topic: String,
-                        listenerName: ListenerName,
-                        maximumNumberOfPartitions: Int,
-                        errorUnavailableEndpoints: Boolean = false,
-                        errorUnavailableListeners: Boolean = false): MetadataResponseData.MetadataResponseTopic
+  def getMetadataResponseTopic(topic: String,
+                       listenerName: ListenerName,
+                       errorUnavailableEndpoints: Boolean = false,
+                       errorUnavailableListeners: Boolean = false,
+                       partitionStartIndex: Int,
+                       maximumNumberOfPartitions: Int): Option[MetadataResponseData.MetadataResponseTopic]
 
   def getAllTopics(): collection.Set[String]
 
