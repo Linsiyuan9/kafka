@@ -55,6 +55,7 @@
       "about": "Whether to include cluster authorized operations." },
     { "name": "IncludeTopicAuthorizedOperations", "type": "bool", "versions": "8+",
       "about": "Whether to include topic authorized operations." },
+    { "name": "ResponsePaginationLimit", "ignorable": true, "type": "int32", "versions": "13+", "default": "2000", "about": "The maximum number of partitions included in the response." },
     { "name": "Cursor", "ignorable": true, "type": "OffsetFetchCursor", "versions": "13+", "nullableVersions": "13+", "default": "null", "about": "The first topic and partition index to fetch details for.",
       "fields": [
         { "name": "GroupId", "type": "string", "versions": "13+", "about": "The group ID to start with"},

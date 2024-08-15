@@ -211,14 +211,16 @@ class ZkMetadataCache(
                                    errorUnavailableEndpoints: Boolean,
                                    errorUnavailableListeners: Boolean,
                                    partitionStartIndex: Int = 0,
-                                   maximumNumberOfPartitions: Int = -1): Option[Iterable[MetadataResponsePartition]] = {
-    var remaining = maximumNumberOfPartitions
-    snapshot.partitionStates.get(topic).map { partitions =>
-      val result = new mutable.ArrayBuffer[MetadataResponsePartition]
-      breakable {
-        partitions.foreach { case (partitionId, partitionState) =>
-          if (partitionId >= partitionStartIndex) {
-            val topicPartition = new TopicPartition(topic, partitionId.toInt)
+                                   maximumNumberOfPartitions: Int = Int.MaxValue): (Option[Iterable[MetadataResponsePartition]], Int) = {
+    snapshot.partitionStates.get(topic) match {
+      case None => (None, -1)
+      case Some(partitions) =>
+        val result = new mutable.ArrayBuffer[MetadataResponsePartition]
+        val upperIndex = partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
+        val nextIndex = if (upperIndex < partitions.size) upperIndex else -1
+        for (partitionId <- partitionStartIndex until upperIndex) {
+          partitions.get(partitionId).map { partitionState =>
+            val topicPartition = new TopicPartition(topic, partitionId)
             val leaderBrokerId = partitionState.leader
             val leaderEpoch = partitionState.leaderEpoch
             val maybeLeader = getAliveEndpoint(snapshot, leaderBrokerId, listenerName)
@@ -273,16 +275,9 @@ class ZkMetadataCache(
                   .setIsrNodes(filteredIsr)
                   .setOfflineReplicas(offlineReplicas)
             }
-
-            if (remaining != -1) {
-              remaining -= 1
-              if (remaining <= 0)
-                break
-            }
           }
         }
-      }
-      result
+        (Some(result), nextIndex)
     }
   }
 
@@ -312,7 +307,7 @@ class ZkMetadataCache(
                        errorUnavailableListeners: Boolean = false): Seq[MetadataResponseTopic] = {
     val snapshot = metadataSnapshot
     topics.toSeq.flatMap { topic =>
-      getPartitionMetadata(snapshot, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners).map { partitionMetadata =>
+      getPartitionMetadata(snapshot, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners)._1.map { partitionMetadata =>
         new MetadataResponseTopic()
           .setErrorCode(Errors.NONE.code)
           .setName(topic)
@@ -324,21 +319,22 @@ class ZkMetadataCache(
   }
 
   def getMetadataResponseTopic(topic: String,
-                       listenerName: ListenerName,
-                       errorUnavailableEndpoints: Boolean = false,
-                       errorUnavailableListeners: Boolean = false,
-                       partitionStartIndex: Int,
-                       maximumNumberOfPartitions: Int): Option[MetadataResponseTopic] = {
+                               listenerName: ListenerName,
+                               errorUnavailableEndpoints: Boolean = false,
+                               errorUnavailableListeners: Boolean = false,
+                               partitionStartIndex: Int,
+                               maximumNumberOfPartitions: Int): (Option[MetadataResponseTopic], Int) = {
     val snapshot = metadataSnapshot
-    getPartitionMetadata(snapshot, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners,
-      partitionStartIndex, maximumNumberOfPartitions).map { partitionMetadata =>
+    val (partitionResponse, nextPartition) = getPartitionMetadata(snapshot, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners,
+      partitionStartIndex, maximumNumberOfPartitions)
+    (partitionResponse.map { partitionMetadata =>
       new MetadataResponseTopic()
         .setErrorCode(Errors.NONE.code)
         .setName(topic)
         .setTopicId(snapshot.topicIds.getOrElse(topic, Uuid.ZERO_UUID))
         .setIsInternal(Topic.isInternal(topic))
         .setPartitions(partitionMetadata.toBuffer.asJava)
-    }
+    }, nextPartition)
   }
 
   def topicNamesToIds(): util.Map[String, Uuid] = {

@@ -195,6 +195,10 @@ public class MetadataRequest extends AbstractRequest {
         return data.cursor();
     }
 
+    public int responsePaginationLimit() {
+        return data.responsePaginationLimit();
+    }
+
     public boolean pagination() {
         return data.cursor() != null;
     }
