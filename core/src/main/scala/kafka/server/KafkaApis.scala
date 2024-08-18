@@ -1507,7 +1507,7 @@ class KafkaApis(val requestChannel: RequestChannel,
           if (notAllowExposeTopic)
             (None, -1)
           else if (useTopicId)
-            (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, null, metadataCache.getTopicId(topicNane), isInternal = false, util.Collections.emptyList())), -1)
+            (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, null, topicId, isInternal = false, util.Collections.emptyList())), -1)
           else
             (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, topicNane, Uuid.ZERO_UUID, isInternal = false, util.Collections.emptyList())), -1)
         }
@@ -1519,10 +1519,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         metadataResponseTopics.addOne(response)
         if (metadataRequest.pagination) {
           //不等于-1说明还没到头
-          if (nextPartition != -1) {
             resultCursor.setTopicName(topicNane)
             resultCursor.setPartitionIndex(nextPartition)
-          }
 
           if (response.errorCode == Errors.NONE.code) {
             remainingPartition -= response.partitions.size
@@ -1589,6 +1587,76 @@ class KafkaApis(val requestChannel: RequestChannel,
         metadataRequest.topics.asScala.sorted.foreach(topic => metadataByTopicName(topic))
       }
     }
+
+    {
+      val topicMap = if (metadataRequest.isAllTopics) {
+        metadataCache.getAllTopics.toBuffer.map(topicName => (topicName, metadataCache.getTopicId(topicName)))
+      } else if (useTopicId) {
+        topicIds.map(topicId => (metadataCache.getTopicName(topicId).getOrElse(""), topicId))
+      } else {
+        metadataRequest.topics.asScala.map(topicName => (topicName, metadataCache.getTopicId(topicName)))
+      }.sortBy(_._1)
+
+      for (i <- 0 until topicMap.length) {
+        val tuple = topicMap(i)
+        val topicName = tuple._1
+        val topicId = tuple._2
+
+        if (useTopicId && topicName.isEmpty) {
+          metadataResponseTopics += metadataResponseTopic(Errors.UNKNOWN_TOPIC_ID, null, topicId, isInternal = false, util.Collections.emptyList())
+        } else {
+          val (topicResponse, nextPartition) = if (cursor == null || topicName.compare(cursorTopicName) >= 0) {
+            //2.根据topic描述权限分类topic
+            if (authHelper.authorize(request.context, DESCRIBE, TOPIC, topicName, logIfDenied = !metadataRequest.isAllTopics)) {
+              //3.对于有权限但是没有创建权限的
+              if (!metadataCache.contains(topicName) && metadataRequest.allowAutoTopicCreation && config.autoCreateTopicsEnable) {
+                if (allowCreateCluster && authHelper.authorize(request.context, CREATE, TOPIC, topicName)) {
+                  topicMetadata(topicName)
+                } else {
+                  (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, topicName, Uuid.ZERO_UUID, isInternal(topicName), util.Collections.emptyList())), -1)
+                }
+              } else {
+                topicMetadata(topicName)
+              }
+            } else {
+              if (notAllowExposeTopic)
+                (None, -1)
+              else if (useTopicId)
+                (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, null, topicId, isInternal = false, util.Collections.emptyList())), -1)
+              else
+                (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, topicName, Uuid.ZERO_UUID, isInternal = false, util.Collections.emptyList())), -1)
+            }
+          } else {
+            (None, -1)
+          }
+
+          topicResponse.foreach { response =>
+            metadataResponseTopics.addOne(response)
+            if (metadataRequest.pagination) {
+              //不等于-1说明还没到头
+              if (i == topicMap.size - 1) {
+
+              }else{
+
+              }
+              resultCursor.setTopicName(topicName)
+              resultCursor.setPartitionIndex(nextPartition)
+
+              if (response.errorCode == Errors.NONE.code) {
+                remainingPartition -= response.partitions.size
+                if (remainingPartition <= 0)
+                  break
+              }
+            }
+          }
+
+
+        }
+      }
+
+
+    }
+
 
     val brokers = metadataCache.getAliveBrokerNodes(request.context.listenerName)
 
