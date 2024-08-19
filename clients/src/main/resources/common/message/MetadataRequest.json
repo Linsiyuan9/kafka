@@ -18,7 +18,7 @@
   "type": "request",
   "listeners": ["zkBroker", "broker"],
   "name": "MetadataRequest",
-  "validVersions": "0-12",
+  "validVersions": "0-13",
   "deprecatedVersions": "0-3",
   "flexibleVersions": "9+",
   "fields": [
@@ -39,7 +39,10 @@
     //
     // Version 11 deprecates IncludeClusterAuthorizedOperations field. This is now exposed
     // by the DescribeCluster API (KIP-700).
+    //
     // Version 12 supports topic Id.
+    //
+    // Version 13 is adding pagination.
     { "name": "Topics", "type": "[]MetadataRequestTopic", "versions": "0+", "nullableVersions": "1+",
       "about": "The topics to fetch metadata for.", "fields": [
       { "name": "TopicId", "type": "uuid", "versions": "10+", "ignorable": true, "about": "The topic id." },
@@ -51,6 +54,12 @@
     { "name": "IncludeClusterAuthorizedOperations", "type": "bool", "versions": "8-10",
       "about": "Whether to include cluster authorized operations." },
     { "name": "IncludeTopicAuthorizedOperations", "type": "bool", "versions": "8+",
-      "about": "Whether to include topic authorized operations." }
+      "about": "Whether to include topic authorized operations." },
+    { "name": "ResponsePaginationLimit", "ignorable": true, "type": "int32", "versions": "13+", "default": "-1", "about": "The maximum number of partitions included in the response." },
+    { "name": "Cursor", "ignorable": true, "type": "MetadataCursor", "versions": "13+", "nullableVersions": "13+", "default": "null", "about": "The first topic and partition index to fetch details for.",
+      "fields": [
+        { "name": "TopicName", "type": "string", "versions": "13+", "about": "The name for the first topic to process", "entityType": "topicName"},
+        { "name": "PartitionIndex", "type": "int32", "versions": "13+", "about": "The partition index to start with"}
+      ]}
   ]
 }

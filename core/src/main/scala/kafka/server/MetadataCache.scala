@@ -58,6 +58,27 @@ trait MetadataCache {
     errorUnavailableEndpoints: Boolean = false,
     errorUnavailableListeners: Boolean = false): collection.Seq[MetadataResponseData.MetadataResponseTopic]
 
+  /**
+   * Return topic metadata for a given set of topics and listener. See KafkaApis#handleTopicMetadataRequest for details
+   * on the use of the two boolean flags.
+   *
+   * @param topics                    The set of topics.
+   * @param listenerName              The listener name.
+   * @param errorUnavailableEndpoints If true, we return an error on unavailable brokers. This is used to support
+   *                                  MetadataResponse version 0.
+   * @param errorUnavailableListeners If true, return LEADER_NOT_AVAILABLE if the listener is not found on the leader.
+   *                                  This is used for MetadataResponse versions 0-5.
+   * @param partitionStartIndex       起始位
+   * @param maximumNumberOfPartitions -1表示没有上限限制
+   * @return A collection of topic metadata.
+   */
+  def getMetadataResponseTopic(topic: String,
+                               listenerName: ListenerName,
+                               errorUnavailableEndpoints: Boolean = false,
+                               errorUnavailableListeners: Boolean = false,
+                               partitionStartIndex: Int,
+                               maximumNumberOfPartitions: Int): (Option[MetadataResponseData.MetadataResponseTopic], Int)
+
   def getAllTopics(): collection.Set[String]
 
   def getTopicPartitions(topicName: String): collection.Set[TopicPartition]

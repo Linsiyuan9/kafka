@@ -86,60 +86,70 @@ class KRaftMetadataCache(
   // errorUnavailableEndpoints exists to support v0 MetadataResponses
   // If errorUnavailableListeners=true, return LISTENER_NOT_FOUND if listener is missing on the broker.
   // Otherwise, return LEADER_NOT_AVAILABLE for broker unavailable and missing listener (Metadata response v5 and below).
-  private def getPartitionMetadata(image: MetadataImage, topicName: String, listenerName: ListenerName, errorUnavailableEndpoints: Boolean,
-                                   errorUnavailableListeners: Boolean): Option[Iterator[MetadataResponsePartition]] = {
+  private def getPartitionMetadata(image: MetadataImage,
+                                   topicName: String,
+                                   listenerName: ListenerName,
+                                   errorUnavailableEndpoints: Boolean,
+                                   errorUnavailableListeners: Boolean,
+                                   partitionStartIndex: Int = 0,
+                                   maximumNumberOfPartitions: Int = -1): (Option[Iterator[MetadataResponsePartition]], Int) = {
     Option(image.topics().getTopic(topicName)) match {
-      case None => None
-      case Some(topic) => Some(topic.partitions().entrySet().asScala.map { entry =>
-        val partitionId = entry.getKey
-        val partition = entry.getValue
-        val filteredReplicas = maybeFilterAliveReplicas(image, partition.replicas,
-          listenerName, errorUnavailableEndpoints)
-        val filteredIsr = maybeFilterAliveReplicas(image, partition.isr, listenerName,
-          errorUnavailableEndpoints)
-        val offlineReplicas = getOfflineReplicas(image, partition, listenerName)
-        val maybeLeader = getAliveEndpoint(image, partition.leader, listenerName)
-        maybeLeader match {
-          case None =>
-            val error = if (!image.cluster().brokers.containsKey(partition.leader)) {
-              debug(s"Error while fetching metadata for $topicName-$partitionId: leader not available")
-              Errors.LEADER_NOT_AVAILABLE
-            } else {
-              debug(s"Error while fetching metadata for $topicName-$partitionId: listener $listenerName " +
-                s"not found on leader ${partition.leader}")
-              if (errorUnavailableListeners) Errors.LISTENER_NOT_FOUND else Errors.LEADER_NOT_AVAILABLE
-            }
-            new MetadataResponsePartition()
-              .setErrorCode(error.code)
-              .setPartitionIndex(partitionId)
-              .setLeaderId(MetadataResponse.NO_LEADER_ID)
-              .setLeaderEpoch(partition.leaderEpoch)
-              .setReplicaNodes(filteredReplicas)
-              .setIsrNodes(filteredIsr)
-              .setOfflineReplicas(offlineReplicas)
-          case Some(leader) =>
-            val error = if (filteredReplicas.size < partition.replicas.length) {
-              debug(s"Error while fetching metadata for $topicName-$partitionId: replica information not available for " +
-                s"following brokers ${partition.replicas.filterNot(filteredReplicas.contains).mkString(",")}")
-              Errors.REPLICA_NOT_AVAILABLE
-            } else if (filteredIsr.size < partition.isr.length) {
-              debug(s"Error while fetching metadata for $topicName-$partitionId: in sync replica information not available for " +
-                s"following brokers ${partition.isr.filterNot(filteredIsr.contains).mkString(",")}")
-              Errors.REPLICA_NOT_AVAILABLE
-            } else {
-              Errors.NONE
-            }
+      case None => (None, -1)
+      case Some(topic) =>
+        val result = new mutable.ArrayBuffer[MetadataResponsePartition]
+        val partitions = topic.partitions()
+        val upperIndex = if (partitionStartIndex == -1) partitions.size else partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
+        val nextIndex = if (upperIndex < partitions.size()) upperIndex else -1
+        for (partitionId <- partitionStartIndex until upperIndex) {
+          val partition = partitions.get(partitionId)
+          val filteredReplicas = maybeFilterAliveReplicas(image, partition.replicas,
+            listenerName, errorUnavailableEndpoints)
+          val filteredIsr = maybeFilterAliveReplicas(image, partition.isr, listenerName,
+            errorUnavailableEndpoints)
+          val offlineReplicas = getOfflineReplicas(image, partition, listenerName)
+          val maybeLeader = getAliveEndpoint(image, partition.leader, listenerName)
+          maybeLeader match {
+            case None =>
+              val error = if (!image.cluster().brokers.containsKey(partition.leader)) {
+                debug(s"Error while fetching metadata for $topicName-$partitionId: leader not available")
+                Errors.LEADER_NOT_AVAILABLE
+              } else {
+                debug(s"Error while fetching metadata for $topicName-$partitionId: listener $listenerName " +
+                  s"not found on leader ${partition.leader}")
+                if (errorUnavailableListeners) Errors.LISTENER_NOT_FOUND else Errors.LEADER_NOT_AVAILABLE
+              }
+              result += new MetadataResponsePartition()
+                .setErrorCode(error.code)
+                .setPartitionIndex(partitionId)
+                .setLeaderId(MetadataResponse.NO_LEADER_ID)
+                .setLeaderEpoch(partition.leaderEpoch)
+                .setReplicaNodes(filteredReplicas)
+                .setIsrNodes(filteredIsr)
+                .setOfflineReplicas(offlineReplicas)
+            case Some(leader) =>
+              val error = if (filteredReplicas.size < partition.replicas.length) {
+                debug(s"Error while fetching metadata for $topicName-$partitionId: replica information not available for " +
+                  s"following brokers ${partition.replicas.filterNot(filteredReplicas.contains).mkString(",")}")
+                Errors.REPLICA_NOT_AVAILABLE
+              } else if (filteredIsr.size < partition.isr.length) {
+                debug(s"Error while fetching metadata for $topicName-$partitionId: in sync replica information not available for " +
+                  s"following brokers ${partition.isr.filterNot(filteredIsr.contains).mkString(",")}")
+                Errors.REPLICA_NOT_AVAILABLE
+              } else {
+                Errors.NONE
+              }
 
-            new MetadataResponsePartition()
-              .setErrorCode(error.code)
-              .setPartitionIndex(partitionId)
-              .setLeaderId(leader.id())
-              .setLeaderEpoch(partition.leaderEpoch)
-              .setReplicaNodes(filteredReplicas)
-              .setIsrNodes(filteredIsr)
-              .setOfflineReplicas(offlineReplicas)
+              result += new MetadataResponsePartition()
+                .setErrorCode(error.code)
+                .setPartitionIndex(partitionId)
+                .setLeaderId(leader.id())
+                .setLeaderEpoch(partition.leaderEpoch)
+                .setReplicaNodes(filteredReplicas)
+                .setIsrNodes(filteredIsr)
+                .setOfflineReplicas(offlineReplicas)
+          }
         }
-      }.iterator)
+        (Some(result.iterator), nextIndex)
     }
   }
 
@@ -248,7 +258,7 @@ class KRaftMetadataCache(
                                 errorUnavailableListeners: Boolean = false): Seq[MetadataResponseTopic] = {
     val image = _currentImage
     topics.toSeq.flatMap { topic =>
-      getPartitionMetadata(image, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners).map { partitionMetadata =>
+      getPartitionMetadata(image, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners)._1.map { partitionMetadata =>
         new MetadataResponseTopic()
           .setErrorCode(Errors.NONE.code)
           .setName(topic)
@@ -257,6 +267,25 @@ class KRaftMetadataCache(
           .setPartitions(partitionMetadata.toBuffer.asJava)
       }
     }
+  }
+
+  override def getMetadataResponseTopic(topic: String,
+                                        listenerName: ListenerName,
+                                        errorUnavailableEndpoints: Boolean = false,
+                                        errorUnavailableListeners: Boolean = false,
+                                        partitionStartIndex: Int,
+                                        maximumNumberOfPartitions: Int): (Option[MetadataResponseData.MetadataResponseTopic], Int) = {
+    val image = _currentImage
+    val (partitionResponse, nextPartition) = getPartitionMetadata(image, topic, listenerName, errorUnavailableEndpoints, errorUnavailableListeners,
+      partitionStartIndex, maximumNumberOfPartitions)
+    (partitionResponse.map { partitionMetadata =>
+      new MetadataResponseTopic()
+        .setErrorCode(Errors.NONE.code)
+        .setName(topic)
+        .setTopicId(Option(image.topics().getTopic(topic).id()).getOrElse(Uuid.ZERO_UUID))
+        .setIsInternal(Topic.isInternal(topic))
+        .setPartitions(partitionMetadata.toBuffer.asJava)
+    }, nextPartition)
   }
 
   /**

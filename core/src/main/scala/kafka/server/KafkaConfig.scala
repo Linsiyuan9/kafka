@@ -670,6 +670,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
 
   /** ********* Request Limit Configuration ***********/
   val maxRequestPartitionSizeLimit = getInt(ServerConfigs.MAX_REQUEST_PARTITION_SIZE_LIMIT_CONFIG)
+  val maxRequestPaginationSizeLimit = getInt(ServerConfigs.MAX_REQUEST_PAGINATION_SIZE_LIMIT_CONFIG)
 
   val deleteTopicEnable = getBoolean(ServerConfigs.DELETE_TOPIC_ENABLE_CONFIG)
   def compressionType = getString(ServerConfigs.COMPRESSION_TYPE_CONFIG)

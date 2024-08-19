@@ -30,6 +30,7 @@ import java.util.Objects;
 public class ListTopicsOptions extends AbstractOptions<ListTopicsOptions> {
 
     private boolean listInternal = false;
+    private int paginationSizeLimitPerResponse = 2000;
 
     /**
      * Set the timeout in milliseconds for this operation or {@code null} if the default api timeout for the
@@ -54,11 +55,22 @@ public class ListTopicsOptions extends AbstractOptions<ListTopicsOptions> {
         return this;
     }
 
+    // Note that, partitionSizeLimitPerResponse will not be effective if it is larger than the config
+    // max.request.partition.size.limit on the server side.
+    public ListTopicsOptions paginationSizeLimitPerResponse(int paginationSizeLimitPerResponse) {
+        this.paginationSizeLimitPerResponse = paginationSizeLimitPerResponse;
+        return this;
+    }
+
     /**
      * Return true if we should list internal topics.
      */
     public boolean shouldListInternal() {
         return listInternal;
+    }
+
+    public int paginationSizeLimitPerResponse() {
+        return paginationSizeLimitPerResponse;
     }
 
     @Override

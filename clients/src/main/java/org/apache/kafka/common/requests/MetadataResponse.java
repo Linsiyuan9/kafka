@@ -249,6 +249,10 @@ public class MetadataResponse extends AbstractResponse {
         return this.data.clusterId();
     }
 
+    public MetadataResponseData.Cursor cursor() {
+        return this.data.nextCursor();
+    }
+
     /**
      * Check whether the leader epochs returned from the response can be relied on
      * for epoch validation in Fetch, ListOffsets, and OffsetsForLeaderEpoch requests.
@@ -476,7 +480,19 @@ public class MetadataResponse extends AbstractResponse {
                                                    List<MetadataResponseTopic> topics,
                                                    int clusterAuthorizedOperations) {
         return prepareResponse(hasReliableLeaderEpochs(version), throttleTimeMs, brokers, clusterId, controllerId,
-                topics, clusterAuthorizedOperations);
+                topics, clusterAuthorizedOperations, null);
+    }
+
+    public static MetadataResponse prepareResponse(short version,
+                                                   int throttleTimeMs,
+                                                   Collection<Node> brokers,
+                                                   String clusterId,
+                                                   int controllerId,
+                                                   List<MetadataResponseTopic> topics,
+                                                   int clusterAuthorizedOperations,
+                                                   MetadataResponseData.Cursor cursor) {
+        return prepareResponse(hasReliableLeaderEpochs(version), throttleTimeMs, brokers, clusterId, controllerId,
+                topics, clusterAuthorizedOperations, cursor);
     }
 
     // Visible for testing
@@ -486,7 +502,8 @@ public class MetadataResponse extends AbstractResponse {
                                                    String clusterId,
                                                    int controllerId,
                                                    List<MetadataResponseTopic> topics,
-                                                   int clusterAuthorizedOperations) {
+                                                   int clusterAuthorizedOperations,
+                                                   MetadataResponseData.Cursor cursor) {
         MetadataResponseData responseData = new MetadataResponseData();
         responseData.setThrottleTimeMs(throttleTimeMs);
         brokers.forEach(broker ->

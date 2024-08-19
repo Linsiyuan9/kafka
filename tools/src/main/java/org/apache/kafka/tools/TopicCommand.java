@@ -500,7 +500,7 @@ public abstract class TopicCommand {
         }
 
         public void listTopics(TopicCommandOptions opts) throws ExecutionException, InterruptedException {
-            String results = getTopics(opts.topic(), opts.excludeInternalTopics())
+            String results = getTopics(opts.topic(), opts.excludeInternalTopics(), opts.paginationSizeLimitPerResponse())
                 .stream()
                 .collect(Collectors.joining("\n"));
             System.out.println(results);
@@ -508,7 +508,7 @@ public abstract class TopicCommand {
 
         public void alterTopic(TopicCommandOptions opts) throws ExecutionException, InterruptedException {
             CommandTopicPartition topic = new CommandTopicPartition(opts);
-            List<String> topics = getTopics(opts.topic(), opts.excludeInternalTopics());
+            List<String> topics = getTopics(opts.topic(), opts.excludeInternalTopics(), opts.paginationSizeLimitPerResponse());
             ensureTopicExists(topics, opts.topic(), !opts.ifExists());
 
             if (!topics.isEmpty()) {
@@ -568,7 +568,7 @@ public abstract class TopicCommand {
                 topics = Collections.emptyList();
             } else {
                 topicIds = Collections.emptyList();
-                topics = getTopics(opts.topic(), opts.excludeInternalTopics());
+                topics = getTopics(opts.topic(), opts.excludeInternalTopics(), opts.paginationSizeLimitPerResponse());
             }
 
             // Only check topic name when topicId is not provided
@@ -652,18 +652,19 @@ public abstract class TopicCommand {
         }
 
         public void deleteTopic(TopicCommandOptions opts) throws ExecutionException, InterruptedException {
-            List<String> topics = getTopics(opts.topic(), opts.excludeInternalTopics());
+            List<String> topics = getTopics(opts.topic(), opts.excludeInternalTopics(), opts.paginationSizeLimitPerResponse());
             ensureTopicExists(topics, opts.topic(), !opts.ifExists());
             adminClient.deleteTopics(Collections.unmodifiableList(topics),
                 new DeleteTopicsOptions().retryOnQuotaViolation(false)
             ).all().get();
         }
 
-        public List<String> getTopics(Optional<String> topicIncludeList, boolean excludeInternalTopics) throws ExecutionException, InterruptedException {
+        public List<String> getTopics(Optional<String> topicIncludeList, boolean excludeInternalTopics, Optional<Integer> paginationSizeLimitPerResponse) throws ExecutionException, InterruptedException {
             ListTopicsOptions listTopicsOptions = new ListTopicsOptions();
             if (!excludeInternalTopics) {
                 listTopicsOptions.listInternal(true);
             }
+            listTopicsOptions.paginationSizeLimitPerResponse(paginationSizeLimitPerResponse.orElse(2000));
 
             Set<String> allTopics = adminClient.listTopics(listTopicsOptions).names().get();
             return doGetTopics(allTopics.stream().sorted().collect(Collectors.toList()), topicIncludeList, excludeInternalTopics);
@@ -738,6 +739,8 @@ public abstract class TopicCommand {
         private final OptionSpecBuilder excludeInternalTopicOpt;
 
         private final ArgumentAcceptingOptionSpec<Integer> partitionSizeLimitPerResponseOpt;
+
+        private final ArgumentAcceptingOptionSpec<Integer> paginationSizeLimitPerResponseOpt;
 
         private final Set<OptionSpec<?>> allTopicLevelOpts;
 
@@ -820,6 +823,11 @@ public abstract class TopicCommand {
                 "The maximum partition size to be included in one DescribeTopicPartitions response.")
                     .withRequiredArg()
                     .describedAs("maximum number of partitions per response")
+                    .ofType(java.lang.Integer.class);
+            paginationSizeLimitPerResponseOpt = parser.accepts("pagination-size-limit-per-response",
+                            "The maximum partition size to be included in one DescribeTopicPartitions response.")
+                    .withRequiredArg()
+                    .describedAs("maximum number of pagination per response")
                     .ofType(java.lang.Integer.class);
             options = parser.parse(args);
 
@@ -942,6 +950,10 @@ public abstract class TopicCommand {
 
         public Optional<Integer> partitionSizeLimitPerResponse() {
             return valueAsOption(partitionSizeLimitPerResponseOpt);
+        }
+
+        public Optional<Integer> paginationSizeLimitPerResponse() {
+            return valueAsOption(paginationSizeLimitPerResponseOpt);
         }
 
         public Optional<List<String>> topicConfig() {

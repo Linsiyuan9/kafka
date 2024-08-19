@@ -42,7 +42,9 @@
   // Version 11 deprecates ClusterAuthorizedOperations. This is now exposed
   // by the DescribeCluster API (KIP-700).
   // Version 12 supports topicId.
-  "validVersions": "0-12",
+  //
+  // Version 13 supports topicId.
+  "validVersions": "0-13",
   "flexibleVersions": "9+",
   "fields": [
     { "name": "ThrottleTimeMs", "type": "int32", "versions": "3+", "ignorable": true,
@@ -93,6 +95,11 @@
         "about": "32-bit bitfield to represent authorized operations for this topic." }
     ]},
     { "name": "ClusterAuthorizedOperations", "type": "int32", "versions": "8-10", "default": "-2147483648",
-      "about": "32-bit bitfield to represent authorized operations for this cluster." }
+      "about": "32-bit bitfield to represent authorized operations for this cluster." },
+    { "name": "NextCursor", "type": "Cursor", "versions": "13+", "nullableVersions": "13+", "default": "null",
+      "about": "The next topic and partition index to fetch details for.", "fields": [
+      { "name": "TopicName", "type": "string", "versions": "13+", "about": "The name for the first topic to process", "entityType": "topicName"},
+      { "name": "PartitionIndex", "type": "int32", "versions": "13+", "about": "The partition index to start with"}
+    ]}
   ]
 }

@@ -160,6 +160,7 @@ import org.apache.kafka.common.message.ListGroupsRequestData;
 import org.apache.kafka.common.message.ListGroupsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.MetadataRequestData;
+import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.UnregisterBrokerRequestData;
@@ -2123,7 +2124,11 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             MetadataRequest.Builder createRequest(int timeoutMs) {
-                return MetadataRequest.Builder.allTopics();
+                MetadataRequestData metadataRequestData = new MetadataRequestData()
+                        .setTopics(null)
+                        .setAllowAutoTopicCreation(true)
+                        .setResponsePaginationLimit(options.paginationSizeLimitPerResponse());
+                return new MetadataRequest.Builder(metadataRequestData);
             }
 
             @Override
@@ -2137,6 +2142,55 @@ public class KafkaAdminClient extends AdminClient {
                         topicListing.put(topicName, new TopicListing(topicName, topicMetadata.topicId(), isInternal));
                 }
                 topicListingFuture.complete(topicListing);
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                topicListingFuture.completeExceptionally(throwable);
+            }
+        }, now);
+        return new ListTopicsResult(topicListingFuture);
+    }
+
+    public ListTopicsResult listTopicsV1(final ListTopicsOptions options) {
+        final KafkaFutureImpl<Map<String, TopicListing>> topicListingFuture = new KafkaFutureImpl<>();
+        final long now = time.milliseconds();
+        runnable.call(new Call("listTopics", calcDeadlineMs(now, options.timeoutMs()),
+                new LeastLoadedNodeProvider()) {
+
+            MetadataResponseData.Cursor lastCursor = null;
+            Map<String, TopicListing> topicListings = new HashMap<>();
+
+            @Override
+            MetadataRequest.Builder createRequest(int timeoutMs) {
+                MetadataRequestData metadataRequestData = new MetadataRequestData()
+                        .setTopics(null)
+                        .setAllowAutoTopicCreation(true)
+                        .setResponsePaginationLimit(options.paginationSizeLimitPerResponse());
+                if (lastCursor != null) {
+                    metadataRequestData.setCursor(new MetadataRequestData.MetadataCursor()
+                            .setTopicName(lastCursor.topicName())
+                            .setPartitionIndex(lastCursor.partitionIndex()));
+                }
+                return new MetadataRequest.Builder(metadataRequestData);
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                MetadataResponse response = (MetadataResponse) abstractResponse;
+                for (MetadataResponse.TopicMetadata topicMetadata : response.topicMetadata()) {
+                    String topicName = topicMetadata.topic();
+                    boolean isInternal = topicMetadata.isInternal();
+                    if (!topicMetadata.isInternal() || options.shouldListInternal())
+                        topicListings.put(topicName, new TopicListing(topicName, topicMetadata.topicId(), isInternal));
+                }
+
+                if (response.cursor() != null) {
+                    lastCursor = response.cursor();
+                    runnable.call(this, time.milliseconds());
+                } else {
+                    topicListingFuture.complete(topicListings);
+                }
             }
 
             @Override

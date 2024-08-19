@@ -89,6 +89,7 @@ import scala.annotation.nowarn
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.jdk.CollectionConverters._
+import scala.util.control.Breaks.{break, breakable}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -1413,6 +1414,189 @@ class KafkaApis(val requestChannel: RequestChannel,
          controllerId.getOrElse(MetadataResponse.NO_CONTROLLER_ID),
          completeTopicMetadata.asJava,
          clusterAuthorizedOperations
+      ))
+  }
+
+  def handleTopicMetadataRequestV1(request: RequestChannel.Request): Unit = {
+    val metadataRequest = request.body[MetadataRequest]
+    val requestVersion = request.header.apiVersion
+
+    // Topic IDs are not supported for versions 10 and 11. Topic names can not be null in these versions.
+    if (!metadataRequest.isAllTopics) {
+      metadataRequest.data.topics.forEach { topic =>
+        if (topic.name == null && metadataRequest.version < 12) {
+          throw new InvalidRequestException(s"Topic name can not be null for version ${metadataRequest.version}")
+        } else if (topic.topicId != Uuid.ZERO_UUID && metadataRequest.version < 12) {
+          throw new InvalidRequestException(s"Topic IDs are not supported in requests for version ${metadataRequest.version}")
+        }
+      }
+    }
+
+    // Check if topicId is presented firstly.
+    val topicIds = metadataRequest.topicIds.asScala.filterNot(_ == Uuid.ZERO_UUID)
+    val useTopicId = topicIds.nonEmpty
+
+    val cursor = metadataRequest.cursor()
+    val cursorTopicName = if (cursor != null) cursor.topicName() else ""
+    val cursorPartitionIndex = if (cursor != null) cursor.partitionIndex() else 0
+    val maximumNumberOfPartitions = if (metadataRequest.pagination)
+      Math.max(Math.min(config.maxRequestPaginationSizeLimit, metadataRequest.responsePaginationLimit), 1) else -1
+
+    // In version 0, we returned an error when brokers with replicas were unavailable,
+    // while in higher versions we simply don't include the broker in the returned broker list
+    val errorUnavailableEndpoints = requestVersion == 0
+    // In versions 5 and below, we returned LEADER_NOT_AVAILABLE if a matching listener was not found on the leader.
+    // From version 6 onwards, we return LISTENER_NOT_FOUND to enable diagnosis of configuration errors.
+    val errorUnavailableListeners = requestVersion >= 6
+    val allowAutoCreation = config.autoCreateTopicsEnable && metadataRequest.allowAutoTopicCreation && !metadataRequest.isAllTopics
+    lazy val allowCreateCluster = authHelper.authorize(request.context, CREATE, CLUSTER, CLUSTER_NAME, logIfDenied = false)
+    val notAllowExposeTopic = (requestVersion == 0 && (metadataRequest.topics == null || metadataRequest.topics.isEmpty)) || metadataRequest.isAllTopics
+
+    var clusterAuthorizedOperations = Int.MinValue // Default value in the schema
+    // get cluster authorized operations
+    if (requestVersion >= 8 && requestVersion <= 10) {
+      if (metadataRequest.data.includeClusterAuthorizedOperations) {
+        if (authHelper.authorize(request.context, DESCRIBE, CLUSTER, CLUSTER_NAME))
+          clusterAuthorizedOperations = authHelper.authorizedOperations(request, Resource.CLUSTER)
+        else
+          clusterAuthorizedOperations = 0
+      }
+    }
+
+    val resultCursor = new MetadataResponseData.Cursor
+    val metadataResponseTopics = new mutable.ArrayBuffer[MetadataResponseTopic]
+    var remainingPartition = maximumNumberOfPartitions
+
+    def topicMetadata(topicName: String): (Option[MetadataResponseTopic], Int) = {
+      val partitionStartIndex = if (metadataRequest.pagination() && cursorTopicName == topicName) cursorPartitionIndex else 0
+      var (topicResponse, nextPartition) = metadataCache.getMetadataResponseTopic(topicName, request.context.listenerName,
+        errorUnavailableEndpoints, errorUnavailableListeners, partitionStartIndex, remainingPartition)
+
+      if (topicResponse.isEmpty && !metadataRequest.isAllTopics) {
+        if (allowAutoCreation) {
+          val controllerMutationQuota = quotas.controllerMutation.newPermissiveQuotaFor(request)
+          val createTopicResponses = autoTopicCreationManager.createTopics(Set(topicName), controllerMutationQuota, Some(request.context))
+          if (createTopicResponses.nonEmpty) {
+            val createTopicResponse = createTopicResponses.head
+            if (metadataRequest.pagination() && remainingPartition < createTopicResponse.partitions().size()) {
+              createTopicResponse.setPartitions(createTopicResponse.partitions().subList(0, remainingPartition))
+              nextPartition = remainingPartition
+            } else {
+              nextPartition = -1
+            }
+            topicResponse = Some(createTopicResponse)
+          }
+        } else {
+          val error = try {
+            Topic.validate(topicName)
+            Errors.UNKNOWN_TOPIC_OR_PARTITION
+          } catch {
+            case _: InvalidTopicException =>
+              Errors.INVALID_TOPIC_EXCEPTION
+          }
+          topicResponse = Some(metadataResponseTopic(
+            error,
+            topicName,
+            metadataCache.getTopicId(topicName),
+            Topic.isInternal(topicName),
+            util.Collections.emptyList()
+          ))
+        }
+      }
+
+      if (requestVersion >= 8 && metadataRequest.data.includeTopicAuthorizedOperations) {
+        // get topic authorized operations
+        topicResponse.foreach(metaData =>
+          metaData.setTopicAuthorizedOperations(authHelper.authorizedOperations(request, new Resource(ResourceType.TOPIC, metaData.name)))
+        )
+      }
+      (topicResponse, nextPartition)
+    }
+
+    val topicMap = if (metadataRequest.isAllTopics) {
+      metadataCache.getAllTopics().toBuffer.map(topicName => (topicName, metadataCache.getTopicId(topicName)))
+    } else if (useTopicId) {
+      topicIds.map(topicId => (metadataCache.getTopicName(topicId).getOrElse(""), topicId))
+    } else {
+      metadataRequest.topics.asScala.map(topicName => (topicName, metadataCache.getTopicId(topicName)))
+    }.sortBy(_._1)
+
+    breakable {
+      for (i <- topicMap.indices) {
+        val tuple = topicMap(i)
+        val topicName = tuple._1
+        val topicId = tuple._2
+
+        val (topicResponse, nextPartition) = if (useTopicId && topicName.isEmpty) {
+          (Some(metadataResponseTopic(Errors.UNKNOWN_TOPIC_ID, null, topicId, isInternal = false, util.Collections.emptyList())), -1)
+        } else {
+          if (!metadataRequest.pagination || topicName.compare(cursorTopicName) >= 0) {
+            //2.根据topic描述权限分类topic
+            if (authHelper.authorize(request.context, DESCRIBE, TOPIC, topicName, logIfDenied = !metadataRequest.isAllTopics)) {
+              //3.对于有权限但是没有创建权限的
+              if (!metadataCache.contains(topicName) && metadataRequest.allowAutoTopicCreation && config.autoCreateTopicsEnable) {
+                if (allowCreateCluster && authHelper.authorize(request.context, CREATE, TOPIC, topicName)) {
+                  topicMetadata(topicName)
+                } else {
+                  (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, topicName, Uuid.ZERO_UUID, isInternal(topicName), util.Collections.emptyList())), -1)
+                }
+              } else {
+                topicMetadata(topicName)
+              }
+            } else {
+              if (notAllowExposeTopic)
+                (None, -1)
+              else if (useTopicId)
+                (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, null, topicId, isInternal = false, util.Collections.emptyList())), -1)
+              else
+                (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, topicName, Uuid.ZERO_UUID, isInternal = false, util.Collections.emptyList())), -1)
+            }
+          } else {
+            (None, -1)
+          }
+        }
+        topicResponse.foreach { response =>
+          metadataResponseTopics.addOne(response)
+          if (metadataRequest.pagination) {
+            if (i == topicMap.size - 1 && nextPartition == -1) {
+              resultCursor.setTopicName(null)
+              resultCursor.setPartitionIndex(null)
+            } else {
+              resultCursor.setTopicName(topicName)
+              resultCursor.setPartitionIndex(nextPartition)
+
+              if (response.errorCode == Errors.NONE.code) {
+                remainingPartition -= response.partitions.size
+                if (remainingPartition <= 0)
+                  break
+              }
+            }
+          }
+        }
+      }
+    }
+
+    val brokers = metadataCache.getAliveBrokerNodes(request.context.listenerName)
+
+    trace("Sending topic metadata %s and brokers %s for correlation id %d to client %s".format(metadataResponseTopics.mkString(","),
+      brokers.mkString(","), request.header.correlationId, request.header.clientId))
+    val controllerId = {
+      metadataCache.getControllerId.flatMap {
+        case ZkCachedControllerId(id) => Some(id)
+        case KRaftCachedControllerId(_) => metadataCache.getRandomAliveBrokerId
+      }
+    }
+
+    requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs =>
+      MetadataResponse.prepareResponse(
+        requestVersion,
+        requestThrottleMs,
+        brokers.toList.asJava,
+        clusterId,
+        controllerId.getOrElse(MetadataResponse.NO_CONTROLLER_ID),
+        metadataResponseTopics.asJava,
+        clusterAuthorizedOperations,
+        resultCursor
       ))
   }
 
