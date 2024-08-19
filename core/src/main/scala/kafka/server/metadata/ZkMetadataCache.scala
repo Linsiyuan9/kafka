@@ -216,7 +216,7 @@ class ZkMetadataCache(
       case None => (None, -1)
       case Some(partitions) =>
         val result = new mutable.ArrayBuffer[MetadataResponsePartition]
-        val upperIndex = partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
+        val upperIndex = if (partitionStartIndex == -1) partitions.size else partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
         val nextIndex = if (upperIndex < partitions.size) upperIndex else -1
         for (partitionId <- partitionStartIndex until upperIndex) {
           partitions.get(partitionId).map { partitionState =>
@@ -246,7 +246,7 @@ class ZkMetadataCache(
 
                 new MetadataResponsePartition()
                   .setErrorCode(error.code)
-                  .setPartitionIndex(partitionId.toInt)
+                  .setPartitionIndex(partitionId)
                   .setLeaderId(MetadataResponse.NO_LEADER_ID)
                   .setLeaderEpoch(leaderEpoch)
                   .setReplicaNodes(filteredReplicas)
@@ -268,7 +268,7 @@ class ZkMetadataCache(
 
                 new MetadataResponsePartition()
                   .setErrorCode(error.code)
-                  .setPartitionIndex(partitionId.toInt)
+                  .setPartitionIndex(partitionId)
                   .setLeaderId(maybeLeader.map(_.id()).getOrElse(MetadataResponse.NO_LEADER_ID))
                   .setLeaderEpoch(leaderEpoch)
                   .setReplicaNodes(filteredReplicas)
