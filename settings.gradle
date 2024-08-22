@@ -33,12 +33,21 @@ develocity {
             // Alternatively, the build scan will provide the hostname for troubleshooting host-specific issues.
             ipAddresses { addresses -> addresses.collect { address -> "0.0.0.0"} }
         }
+        if (isJenkins) {
+            tag "jenkins"
+        } else if (isGithubActions) {
+            tag "github"
+        } else {
+            tag "local"
+        }
     }
 }
 
 buildCache {
     local {
-        enabled = !isCI
+        // This allows the build cache to be used locally or on GitHub Actions.
+        // Using the cache on GH should be safe since each job is run on a new VM
+        enabled = !isJenkins
     }
 
     remote(develocity.buildCache) {
@@ -68,6 +77,8 @@ include 'clients',
     'raft',
     'server',
     'server-common',
+    'share',
+    'share-coordinator',
     'shell',
     'storage',
     'storage:api',
