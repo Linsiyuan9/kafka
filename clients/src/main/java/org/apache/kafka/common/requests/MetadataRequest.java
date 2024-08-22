@@ -191,7 +191,7 @@ public class MetadataRequest extends AbstractRequest {
         return data.allowAutoTopicCreation();
     }
 
-    public MetadataRequestData.OffsetFetchCursor cursor() {
+    public MetadataRequestData.MetadataCursor cursor() {
         return data.cursor();
     }
 

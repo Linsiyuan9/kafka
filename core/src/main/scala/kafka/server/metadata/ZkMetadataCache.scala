@@ -232,7 +232,7 @@ class ZkMetadataCache(
 
             val offlineReplicas = partitionState.offlineReplicas
 
-            result += maybeLeader match {
+            result += (maybeLeader match {
               case None =>
                 val error = if (!snapshot.aliveBrokers.contains(leaderBrokerId)) { // we are already holding the read lock
                   debug(s"Error while fetching metadata for $topicPartition: leader not available")
@@ -273,7 +273,7 @@ class ZkMetadataCache(
                   .setReplicaNodes(filteredReplicas)
                   .setIsrNodes(filteredIsr)
                   .setOfflineReplicas(offlineReplicas)
-            }
+            })
           }
         }
         (Some(result), nextIndex)

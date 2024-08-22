@@ -483,6 +483,17 @@ public class MetadataResponse extends AbstractResponse {
                 topics, clusterAuthorizedOperations, null);
     }
 
+    public static MetadataResponse prepareResponse(boolean hasReliableEpoch,
+                                                   int throttleTimeMs,
+                                                   Collection<Node> brokers,
+                                                   String clusterId,
+                                                   int controllerId,
+                                                   List<MetadataResponseTopic> topics,
+                                                   int clusterAuthorizedOperations) {
+        return prepareResponse(hasReliableEpoch, throttleTimeMs, brokers, clusterId, controllerId,
+                topics, clusterAuthorizedOperations, null);
+    }
+
     public static MetadataResponse prepareResponse(short version,
                                                    int throttleTimeMs,
                                                    Collection<Node> brokers,
@@ -517,6 +528,7 @@ public class MetadataResponse extends AbstractResponse {
         responseData.setClusterId(clusterId);
         responseData.setControllerId(controllerId);
         responseData.setClusterAuthorizedOperations(clusterAuthorizedOperations);
+        responseData.setNextCursor(cursor);
 
         topics.forEach(topicMetadata -> responseData.topics().add(topicMetadata));
         return new MetadataResponse(responseData, hasReliableEpoch);
