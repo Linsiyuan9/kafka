@@ -98,7 +98,7 @@ class KRaftMetadataCache(
       case Some(topic) =>
         val result = new mutable.ArrayBuffer[MetadataResponsePartition]
         val partitions = topic.partitions()
-        val upperIndex = if (partitionStartIndex == -1) partitions.size else partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
+        val upperIndex = if (maximumNumberOfPartitions == -1) partitions.size else partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
         val nextIndex = if (upperIndex < partitions.size()) upperIndex else -1
         for (partitionId <- partitionStartIndex until upperIndex) {
           val partition = partitions.get(partitionId)

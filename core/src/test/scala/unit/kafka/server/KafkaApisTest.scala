@@ -4161,17 +4161,27 @@ class KafkaApisTest extends Logging {
     val topicsReturnedFromMetadataCacheForAuthorization = Set("remaining-topic", "later-deleted-topic")
     when(metadataCache.getAllTopics()).thenReturn(topicsReturnedFromMetadataCacheForAuthorization)
     // 1 topic is deleted from metadata right at the time between authorization and the next getTopicMetadata() call
-    when(metadataCache.getTopicMetadata(
-      ArgumentMatchers.eq(topicsReturnedFromMetadataCacheForAuthorization),
+    when(metadataCache.getMetadataResponseTopic(
+      ArgumentMatchers.eq("remaining-topic"),
       any[ListenerName],
       anyBoolean,
-      anyBoolean
-    )).thenReturn(Seq(
+      anyBoolean,
+      anyInt(),
+      anyInt()
+    )).thenReturn((Some(
       new MetadataResponseTopic()
         .setErrorCode(Errors.NONE.code)
         .setName("remaining-topic")
         .setIsInternal(false)
-    ))
+    ), -1))
+    when(metadataCache.getMetadataResponseTopic(
+      ArgumentMatchers.eq("later-deleted-topic"),
+      any[ListenerName],
+      anyBoolean,
+      anyBoolean,
+      anyInt(),
+      anyInt()
+    )).thenReturn((None, -1))
 
 
     var createTopicIsCalled: Boolean = false
@@ -4226,7 +4236,7 @@ class KafkaApisTest extends Logging {
       new Action(AclOperation.DESCRIBE, new ResourcePattern(ResourceType.TOPIC, authorizedTopic, PatternType.LITERAL), 1, true, true)
     )
 
-    when(authorizer.authorize(any[RequestContext], argThat((t: java.util.List[Action]) => t.containsAll(expectedActions.asJava))))
+    when(authorizer.authorize(any[RequestContext], argThat((t: java.util.List[Action]) => expectedActions.asJava.containsAll(t))))
       .thenAnswer { invocation =>
       val actions = invocation.getArgument(1).asInstanceOf[util.List[Action]].asScala
       actions.map { action =>

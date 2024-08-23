@@ -1535,4 +1535,118 @@ class MetadataCacheTest {
         cache.getTopicPartitions(topic).asJava)
     )
   }
+
+  @ParameterizedTest
+  @MethodSource(Array("cacheProvider"))
+  def getLimitPartition(cache: MetadataCache): Unit = {
+    val topic0 = "topic-0"
+    val topic1 = "topic-1"
+
+    val zkVersion = 3
+    val controllerId = 2
+    val controllerEpoch = 1
+
+    def endpoints(brokerId: Int): Seq[UpdateMetadataEndpoint] = {
+      val host = s"foo-$brokerId"
+      Seq(
+        new UpdateMetadataEndpoint()
+          .setHost(host)
+          .setPort(9092)
+          .setSecurityProtocol(SecurityProtocol.PLAINTEXT.id)
+          .setListener(ListenerName.forSecurityProtocol(SecurityProtocol.PLAINTEXT).value),
+        new UpdateMetadataEndpoint()
+          .setHost(host)
+          .setPort(9093)
+          .setSecurityProtocol(SecurityProtocol.SSL.id)
+          .setListener(ListenerName.forSecurityProtocol(SecurityProtocol.SSL).value)
+      )
+    }
+
+    val brokers = (0 to 4).map { brokerId =>
+      new UpdateMetadataBroker()
+        .setId(brokerId)
+        .setEndpoints(endpoints(brokerId).asJava)
+        .setRack("rack1")
+    }
+
+    val partitionStates = Seq(
+      new UpdateMetadataPartitionState()
+        .setTopicName(topic0)
+        .setPartitionIndex(0)
+        .setControllerEpoch(controllerEpoch)
+        .setLeader(0)
+        .setLeaderEpoch(0)
+        .setIsr(asList(0, 1, 3))
+        .setZkVersion(zkVersion)
+        .setReplicas(asList(0, 1, 3)),
+      new UpdateMetadataPartitionState()
+        .setTopicName(topic0)
+        .setPartitionIndex(1)
+        .setControllerEpoch(controllerEpoch)
+        .setLeader(1)
+        .setLeaderEpoch(1)
+        .setIsr(asList(1, 0))
+        .setZkVersion(zkVersion)
+        .setReplicas(asList(1, 2, 0, 4)),
+      new UpdateMetadataPartitionState()
+        .setTopicName(topic1)
+        .setPartitionIndex(0)
+        .setControllerEpoch(controllerEpoch)
+        .setLeader(2)
+        .setLeaderEpoch(2)
+        .setIsr(asList(2, 1))
+        .setZkVersion(zkVersion)
+        .setReplicas(asList(2, 1, 3)))
+
+    val topicIds = new util.HashMap[String, Uuid]()
+    topicIds.put(topic0, Uuid.randomUuid())
+    topicIds.put(topic1, Uuid.randomUuid())
+
+    val version = ApiKeys.UPDATE_METADATA.latestVersion
+    val updateMetadataRequest = new UpdateMetadataRequest.Builder(version, controllerId, controllerEpoch, brokerEpoch,
+      partitionStates.asJava, brokers.asJava, topicIds).build()
+    MetadataCacheTest.updateCache(cache, updateMetadataRequest)
+
+    for (securityProtocol <- Seq(SecurityProtocol.PLAINTEXT, SecurityProtocol.SSL)) {
+      val listenerName = ListenerName.forSecurityProtocol(securityProtocol)
+
+      def checkMate(topic: String,
+                    partitionStartIndex: Int,
+                    maximumNumberOfPartitions: Int,
+                    expectNextPartition: Int,
+                    expectPartitionSize: Int): Unit = {
+        val (topicMetadataOpt, nextPartition) = cache.getMetadataResponseTopic(topic, listenerName, partitionStartIndex = partitionStartIndex, maximumNumberOfPartitions = maximumNumberOfPartitions)
+        assertTrue(topicMetadataOpt.isDefined)
+        assertEquals(nextPartition, expectNextPartition)
+
+        val topicMetadata = topicMetadataOpt.get
+        assertEquals(Errors.NONE.code, topicMetadata.errorCode)
+        assertEquals(topic, topicMetadata.name)
+        assertEquals(topicIds.get(topic), topicMetadata.topicId())
+
+        val topicPartitionStates = partitionStates.filter { ps => ps.topicName == topic }
+        val partitionMetadatas = topicMetadata.partitions.asScala.sortBy(_.partitionIndex)
+        assertEquals(partitionMetadatas.size, expectPartitionSize, s"Unexpected partition count for topic $topic")
+
+        partitionMetadatas.zipWithIndex.foreach { case (partitionMetadata, index) =>
+          val partitionId = partitionStartIndex + index
+          assertEquals(Errors.NONE.code, partitionMetadata.errorCode)
+          assertEquals(partitionId, partitionMetadata.partitionIndex)
+          val partitionState = topicPartitionStates.find(_.partitionIndex == partitionId).getOrElse(
+            fail(s"Unable to find partition state for partition $partitionId"))
+          assertEquals(partitionState.leader, partitionMetadata.leaderId)
+          assertEquals(partitionState.leaderEpoch, partitionMetadata.leaderEpoch)
+          assertEquals(partitionState.isr, partitionMetadata.isrNodes)
+          assertEquals(partitionState.replicas, partitionMetadata.replicaNodes)
+        }
+      }
+
+      checkMate(topic0, partitionStartIndex = 0, maximumNumberOfPartitions = 2, expectNextPartition = -1, expectPartitionSize = 2)
+      checkMate(topic0, partitionStartIndex = 0, maximumNumberOfPartitions = 3, expectNextPartition = -1, expectPartitionSize = 2)
+      checkMate(topic0, partitionStartIndex = 1, maximumNumberOfPartitions = 1, expectNextPartition = -1, expectPartitionSize = 1)
+      checkMate(topic0, partitionStartIndex = 2, maximumNumberOfPartitions = 1, expectNextPartition = -1, expectPartitionSize = 0)
+      checkMate(topic1, partitionStartIndex = 0, maximumNumberOfPartitions = 1, expectNextPartition = -1, expectPartitionSize = 1)
+    }
+  }
+
 }

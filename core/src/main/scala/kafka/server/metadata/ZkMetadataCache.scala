@@ -215,7 +215,7 @@ class ZkMetadataCache(
       case None => (None, -1)
       case Some(partitions) =>
         val result = new mutable.ArrayBuffer[MetadataResponsePartition]
-        val upperIndex = if (partitionStartIndex == -1) partitions.size else partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
+        val upperIndex = if (maximumNumberOfPartitions == -1) partitions.size else partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
         val nextIndex = if (upperIndex < partitions.size) upperIndex else -1
         for (partitionId <- partitionStartIndex until upperIndex) {
           partitions.get(partitionId).map { partitionState =>
