@@ -239,7 +239,7 @@ class MetadataRequestTest extends AbstractMetadataRequestTest {
     createTopicWithAssignment(topic2, replicaAssignment)
 
     // if version < 9, return ZERO_UUID in MetadataResponse
-    val resp1 = sendMetadataRequest(new MetadataRequest.Builder(Seq(topic1, topic2).asJava, true, 0, 9).build(), Some(anySocketServer))
+    val resp1 = sendMetadataRequest(new MetadataRequest.Builder(Seq(topic1, topic2).asJava, true, 0.asInstanceOf[Short], 9.asInstanceOf[Short]).build(), Some(anySocketServer))
     assertEquals(2, resp1.topicMetadata.size)
     resp1.topicMetadata.forEach { topicMetadata =>
       assertEquals(Errors.NONE, topicMetadata.error)
@@ -247,7 +247,7 @@ class MetadataRequestTest extends AbstractMetadataRequestTest {
     }
 
     // from version 10, UUID will be included in MetadataResponse
-    val resp2 = sendMetadataRequest(new MetadataRequest.Builder(Seq(topic1, topic2).asJava, true, 10, 10).build(), Some(anySocketServer))
+    val resp2 = sendMetadataRequest(new MetadataRequest.Builder(Seq(topic1, topic2).asJava, true, 10.asInstanceOf[Short], 10.asInstanceOf[Short]).build(), Some(anySocketServer))
     assertEquals(2, resp2.topicMetadata.size)
     resp2.topicMetadata.forEach { topicMetadata =>
       assertEquals(Errors.NONE, topicMetadata.error)

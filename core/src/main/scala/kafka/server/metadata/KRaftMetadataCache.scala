@@ -96,10 +96,10 @@ class KRaftMetadataCache(
     Option(image.topics().getTopic(topicName)) match {
       case None => (None, -1)
       case Some(topic) =>
-        val result = new mutable.ArrayBuffer[MetadataResponsePartition]
         val partitions = topic.partitions()
         val upperIndex = if (maximumNumberOfPartitions == -1) partitions.size else partitions.size.min(partitionStartIndex + maximumNumberOfPartitions)
         val nextIndex = if (upperIndex < partitions.size()) upperIndex else -1
+        val result = new mutable.ArrayBuffer[MetadataResponsePartition](upperIndex - partitionStartIndex)
         for (partitionId <- partitionStartIndex until upperIndex) {
           val partition = partitions.get(partitionId)
           val filteredReplicas = maybeFilterAliveReplicas(image, partition.replicas,

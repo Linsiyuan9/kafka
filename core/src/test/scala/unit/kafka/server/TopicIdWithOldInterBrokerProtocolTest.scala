@@ -55,7 +55,7 @@ class TopicIdWithOldInterBrokerProtocolTest extends BaseRequestTest {
     val topic1 = "topic1"
     createTopicWithAssignment(topic1, replicaAssignment)
 
-    val resp = sendMetadataRequest(new MetadataRequest.Builder(Seq(topic1, topic1).asJava, true, 10, 10).build(), Some(notControllerSocketServer))
+    val resp = sendMetadataRequest(new MetadataRequest.Builder(Seq(topic1, topic1).asJava, true, 10.asInstanceOf[Short], 10.asInstanceOf[Short]).build(), Some(notControllerSocketServer))
     assertEquals(1, resp.topicMetadata.size)
     resp.topicMetadata.forEach { topicMetadata =>
       assertEquals(Errors.NONE, topicMetadata.error)

@@ -48,6 +48,12 @@ public class MetadataRequest extends AbstractRequest {
             this(topics, allowAutoTopicCreation, allowedVersion, allowedVersion);
         }
 
+        public Builder(List<String> topics, int responsePaginationLimit, MetadataRequestData.MetadataCursor cursor, boolean allowAutoTopicCreation) {
+            this(topics, allowAutoTopicCreation, ApiKeys.METADATA.oldestVersion(), ApiKeys.METADATA.latestVersion());
+            this.data.setResponsePaginationLimit(responsePaginationLimit);
+            this.data.setCursor(cursor);
+        }
+
         public Builder(List<String> topics, boolean allowAutoTopicCreation, short minVersion, short maxVersion) {
             super(ApiKeys.METADATA, minVersion, maxVersion);
             MetadataRequestData data = new MetadataRequestData();
@@ -66,6 +72,10 @@ public class MetadataRequest extends AbstractRequest {
         }
 
         public Builder(List<Uuid> topicIds) {
+            this(topicIds, -1, null);
+        }
+
+        public Builder(List<Uuid> topicIds, int responsePaginationLimit, MetadataRequestData.MetadataCursor cursor) {
             super(ApiKeys.METADATA, ApiKeys.METADATA.oldestVersion(), ApiKeys.METADATA.latestVersion());
             MetadataRequestData data = new MetadataRequestData();
             if (topicIds == null)
@@ -76,6 +86,8 @@ public class MetadataRequest extends AbstractRequest {
 
             // It's impossible to create topic with topicId
             data.setAllowAutoTopicCreation(false);
+            data.setResponsePaginationLimit(responsePaginationLimit);
+            data.setCursor(cursor);
             this.data = data;
         }
 

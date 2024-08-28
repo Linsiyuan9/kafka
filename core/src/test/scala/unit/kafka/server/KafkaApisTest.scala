@@ -70,6 +70,7 @@ import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry
 import org.apache.kafka.common.requests.{FetchMetadata => JFetchMetadata, _}
+import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.{PatternType, Resource, ResourcePattern, ResourceType}
 import org.apache.kafka.common.security.auth.{KafkaPrincipal, KafkaPrincipalSerde, SecurityProtocol}
 import org.apache.kafka.common.utils.annotation.ApiKeyVersionsSource
@@ -84,9 +85,9 @@ import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer.{Action, AuthorizationResult, Authorizer}
 import org.apache.kafka.server.common.MetadataVersion.{IBP_0_10_2_IV0, IBP_2_2_IV1}
 import org.apache.kafka.server.common.{FinalizedFeatures, KRaftVersion, MetadataVersion}
-import org.apache.kafka.server.config.{ConfigType, KRaftConfigs, ReplicationConfigs, ServerConfigs, ServerLogConfigs, ShareGroupConfig}
+import org.apache.kafka.server.config._
 import org.apache.kafka.server.metrics.ClientMetricsTestUtils
-import org.apache.kafka.server.share.{CachedSharePartition, ErroneousAndValidPartitionData, FinalContext, ShareAcknowledgementBatch, ShareSession, ShareSessionContext, ShareSessionKey}
+import org.apache.kafka.server.share._
 import org.apache.kafka.server.util.{FutureUtils, MockTime}
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchParams, FetchPartitionData, LogConfig}
 import org.junit.jupiter.api.Assertions._
@@ -11524,4 +11525,240 @@ class KafkaApisTest extends Logging {
     }
     response
   }
+
+  @Test
+  def testPaginationTopicNameMetadataRequest(): Unit = {
+    // 1. Set up broker information
+    val plaintextListener = ListenerName.forSecurityProtocol(SecurityProtocol.PLAINTEXT)
+    val broker = new UpdateMetadataBroker()
+            .setId(0)
+            .setRack("rack")
+            .setEndpoints(Seq(
+              new UpdateMetadataEndpoint()
+                      .setHost("broker0")
+                      .setPort(9092)
+                      .setSecurityProtocol(SecurityProtocol.PLAINTEXT.id)
+                      .setListener(plaintextListener.value)
+            ).asJava)
+
+    // 2. Set up authorizer
+    val authorizer: Authorizer = mock(classOf[Authorizer])
+    val unauthorizedTopic = "unauthorized-topic"
+    val authorizedTopic = "authorized-topic"
+
+    val expectedActions = Seq(
+      new Action(AclOperation.DESCRIBE, new ResourcePattern(ResourceType.TOPIC, unauthorizedTopic, PatternType.LITERAL), 1, true, true),
+      new Action(AclOperation.DESCRIBE, new ResourcePattern(ResourceType.TOPIC, authorizedTopic, PatternType.LITERAL), 1, true, true)
+    )
+
+    when(authorizer.authorize(any[RequestContext], argThat((t: java.util.List[Action]) => expectedActions.asJava.containsAll(t))))
+            .thenAnswer { invocation =>
+              val actions = invocation.getArgument(1).asInstanceOf[util.List[Action]].asScala
+              actions.map { action =>
+                if (action.resourcePattern().name().equals(authorizedTopic))
+                  AuthorizationResult.ALLOWED
+                else
+                  AuthorizationResult.DENIED
+              }.asJava
+            }
+
+    // 3. Set up MetadataCache
+    val authorizedTopicId = Uuid.randomUuid()
+    val unauthorizedTopicId = Uuid.randomUuid()
+
+    val topicIds = new util.HashMap[String, Uuid]()
+    topicIds.put(authorizedTopic, authorizedTopicId)
+    topicIds.put(unauthorizedTopic, unauthorizedTopicId)
+
+    // Send UpdateMetadataReq to update MetadataCache
+    val partitionStates = new mutable.ArrayBuffer[UpdateMetadataPartitionState]
+    for (i <- Range(0, 3)) {
+      partitionStates += new UpdateMetadataPartitionState()
+              .setTopicName(authorizedTopic)
+              .setPartitionIndex(i)
+              .setControllerEpoch(0)
+              .setLeader(0)
+              .setLeaderEpoch(0)
+              .setReplicas(Collections.singletonList(0))
+              .setZkVersion(0)
+              .setIsr(Collections.singletonList(0))
+    }
+    partitionStates += new UpdateMetadataPartitionState()
+            .setTopicName(unauthorizedTopic)
+            .setPartitionIndex(0)
+            .setControllerEpoch(0)
+            .setLeader(0)
+            .setLeaderEpoch(0)
+            .setReplicas(Collections.singletonList(0))
+            .setZkVersion(0)
+            .setIsr(Collections.singletonList(0))
+
+    val updateMetadataRequest = new UpdateMetadataRequest.Builder(ApiKeys.UPDATE_METADATA.latestVersion, 0,
+      0, 0, partitionStates.asJava, Seq(broker).asJava, topicIds).build()
+    metadataCache.asInstanceOf[ZkMetadataCache].updateMetadata(correlationId = 0, updateMetadataRequest)
+
+    // 4. Send TopicMetadataReq using topicId
+    var metadataReqByTopicName = new MetadataRequest.Builder(
+      util.Arrays.asList(authorizedTopic, unauthorizedTopic),
+      1,
+      new MetadataRequestData.MetadataCursor().setTopicName("").setPartitionIndex(0),
+      true
+    ).build()
+    val repByTopicId = buildRequest(metadataReqByTopicName, plaintextListener)
+    when(clientRequestQuotaManager.maybeRecordAndGetThrottleTimeMs(any[RequestChannel.Request](),
+      any[Long])).thenReturn(0)
+    kafkaApis = createKafkaApis(authorizer = Some(authorizer))
+    kafkaApis.handleTopicMetadataRequest(repByTopicId)
+    val metadataByTopicNameResp= verifyNoThrottling[MetadataResponse](repByTopicId)
+
+    assertEquals(metadataByTopicNameResp.data().topics().size, 1)
+    val headIdTopic = metadataByTopicNameResp.data.topics.asScala.head
+    assertEquals(headIdTopic.topicId, authorizedTopicId)
+    assertEquals(headIdTopic.name, authorizedTopic)
+    assertEquals(headIdTopic.partitions.size, 1)
+    val headIdTopicPartition = headIdTopic.partitions.asScala.head
+    assertEquals(headIdTopicPartition.partitionIndex, 0)
+    val idTopicCursor = metadataByTopicNameResp.cursor
+    assertEquals(idTopicCursor.topicName, authorizedTopic)
+    assertEquals(idTopicCursor.partitionIndex, 1)
+
+    kafkaApis.close()
+
+    // 4. Send TopicMetadataReq using topic name
+    reset(clientRequestQuotaManager, requestChannel)
+
+    metadataReqByTopicName = new MetadataRequest.Builder(
+      util.Arrays.asList(authorizedTopic, unauthorizedTopic),
+      3,
+      new MetadataRequestData.MetadataCursor()
+              .setTopicName(idTopicCursor.topicName())
+              .setPartitionIndex(idTopicCursor.partitionIndex()),
+      false
+    ).build()
+    val repByTopicName = buildRequest(metadataReqByTopicName, plaintextListener)
+    kafkaApis = createKafkaApis(authorizer = Some(authorizer))
+    kafkaApis.handleTopicMetadataRequest(repByTopicName)
+    val metadataByTopicNameResp_1 = verifyNoThrottling[MetadataResponse](repByTopicName)
+
+    assertEquals(metadataByTopicNameResp_1.data().topics().size, 2)
+    val headNameTopic = metadataByTopicNameResp_1.data.topics.asScala.head
+    assertEquals(headNameTopic.topicId, authorizedTopicId)
+    assertEquals(headNameTopic.name, authorizedTopic)
+    assertEquals(headNameTopic.partitions.size, 2)
+    val headNameTopicPartition = headNameTopic.partitions.asScala.head
+    assertEquals(headNameTopicPartition.partitionIndex, 1)
+    assertNull(metadataByTopicNameResp_1.cursor)
+  }
+
+  @Test
+  def testPaginationAutoCreateTopicMetadataRequest(): Unit = {
+    // 1. Set up broker information
+    val plaintextListener = ListenerName.forSecurityProtocol(SecurityProtocol.PLAINTEXT)
+    val broker = new UpdateMetadataBroker()
+            .setId(0)
+            .setRack("rack")
+            .setEndpoints(Seq(
+              new UpdateMetadataEndpoint()
+                      .setHost("broker0")
+                      .setPort(9092)
+                      .setSecurityProtocol(SecurityProtocol.PLAINTEXT.id)
+                      .setListener(plaintextListener.value)
+            ).asJava)
+
+    // 2. Set up authorizer
+    val authorizer: Authorizer = mock(classOf[Authorizer])
+    val authorizedTopic = "authorized-topic"
+    val autoCreateTopic = "autoCreate-topic"
+
+    val expectedActions = Seq(
+      new Action(AclOperation.DESCRIBE, new ResourcePattern(ResourceType.TOPIC, authorizedTopic, PatternType.LITERAL), 1, true, true),
+      new Action(AclOperation.DESCRIBE, new ResourcePattern(ResourceType.TOPIC, autoCreateTopic, PatternType.LITERAL), 1, true, true),
+      new Action(AclOperation.CREATE, new ResourcePattern(ResourceType.CLUSTER, CLUSTER_NAME, PatternType.LITERAL), 1, true, false)
+    )
+    when(authorizer.authorize(any[RequestContext], argThat((t: java.util.List[Action]) => expectedActions.asJava.containsAll(t))))
+            .thenAnswer { invocation =>
+              val actions = invocation.getArgument(1).asInstanceOf[util.List[Action]].asScala
+              actions.map { action =>
+                AuthorizationResult.ALLOWED
+              }.asJava
+            }
+
+    when(clientControllerQuotaManager.newPermissiveQuotaFor(any))
+            .thenReturn(UnboundedControllerMutationQuota)
+
+    val autoCreatePartition = new mutable.ArrayBuffer[MetadataResponseData.MetadataResponsePartition]
+    for (i <- Range(0, 3)) {
+      autoCreatePartition += new MetadataResponseData.MetadataResponsePartition()
+              .setErrorCode(0)
+              .setPartitionIndex(i)
+              .setLeaderId(0)
+              .setLeaderEpoch(0)
+              .setReplicaNodes(Collections.singletonList(0))
+              .setIsrNodes(Collections.singletonList(0))
+              .setOfflineReplicas(Collections.singletonList(0))
+    }
+
+    when(autoTopicCreationManager.createTopics(
+      ArgumentMatchers.eq(Set(autoCreateTopic)),
+      ArgumentMatchers.eq(UnboundedControllerMutationQuota),
+      any)).thenReturn(
+      Seq(new MetadataResponseTopic()
+              .setErrorCode(Errors.NONE.code())
+              .setIsInternal(false)
+              .setPartitions(autoCreatePartition.asJava)
+              .setName(autoCreateTopic))
+    )
+
+    // 3. Set up MetadataCache
+    val authorizedTopicId = Uuid.randomUuid()
+
+    val topicIds = new util.HashMap[String, Uuid]()
+    topicIds.put(authorizedTopic, authorizedTopicId)
+
+    // Send UpdateMetadataReq to update MetadataCache
+    val partitionStates = new mutable.ArrayBuffer[UpdateMetadataPartitionState]
+    for (i <- Range(0, 3)) {
+      partitionStates += new UpdateMetadataPartitionState()
+              .setTopicName(authorizedTopic)
+              .setPartitionIndex(i)
+              .setControllerEpoch(0)
+              .setLeader(0)
+              .setLeaderEpoch(0)
+              .setReplicas(Collections.singletonList(0))
+              .setZkVersion(0)
+              .setIsr(Collections.singletonList(0))
+    }
+
+    val updateMetadataRequest = new UpdateMetadataRequest.Builder(ApiKeys.UPDATE_METADATA.latestVersion, 0,
+      0, 0, partitionStates.asJava, Seq(broker).asJava, topicIds).build()
+    metadataCache.asInstanceOf[ZkMetadataCache].updateMetadata(correlationId = 0, updateMetadataRequest)
+
+    // 4. Send TopicMetadataReq using topicId
+    val metadataReqByTopicName = new MetadataRequest.Builder(
+      util.Arrays.asList(authorizedTopic, autoCreateTopic),
+      3,
+      new MetadataRequestData.MetadataCursor().setTopicName(authorizedTopic).setPartitionIndex(1),
+      true
+    ).build()
+    val rep = buildRequest(metadataReqByTopicName, plaintextListener)
+    when(clientRequestQuotaManager.maybeRecordAndGetThrottleTimeMs(any[RequestChannel.Request](),
+      any[Long])).thenReturn(0)
+    kafkaApis = createKafkaApis(authorizer = Some(authorizer))
+    kafkaApis.handleTopicMetadataRequest(rep)
+    val metadataByTopicNameResp = verifyNoThrottling[MetadataResponse](rep)
+
+    assertEquals(metadataByTopicNameResp.data().topics().size, 2)
+    val headTopic = metadataByTopicNameResp.data.topics.asScala.head
+    assertEquals(headTopic.topicId, authorizedTopicId)
+    assertEquals(headTopic.name, authorizedTopic)
+    assertEquals(headTopic.partitions.size, 2)
+    val lastTopic = metadataByTopicNameResp.data.topics.asScala.last
+    assertEquals(lastTopic.name, autoCreateTopic)
+    assertEquals(lastTopic.partitions.size, 1)
+    assertNotNull(metadataByTopicNameResp.cursor)
+    assertEquals(metadataByTopicNameResp.cursor.topicName(), autoCreateTopic)
+    assertEquals(metadataByTopicNameResp.cursor.partitionIndex(), 1)
+    kafkaApis.close()
+  }
+
 }

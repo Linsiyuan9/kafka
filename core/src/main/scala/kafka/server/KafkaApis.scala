@@ -1506,11 +1506,11 @@ class KafkaApis(val requestChannel: RequestChannel,
     val topicIds = metadataRequest.topicIds.asScala.filterNot(_ == Uuid.ZERO_UUID)
     val useTopicId = topicIds.nonEmpty
     val topicMap = if (metadataRequest.isAllTopics) {
-      metadataCache.getAllTopics().toBuffer.map((topicName: String) => (topicName, metadataCache.getTopicId(topicName)))
+      metadataCache.getAllTopics().map((topicName: String) => (topicName, None))
     } else if (useTopicId) {
-      topicIds.map(topicId => (metadataCache.getTopicName(topicId).getOrElse(""), topicId))
+      topicIds.map(topicId => (metadataCache.getTopicName(topicId).getOrElse(""), Some(topicId)))
     } else {
-      metadataRequest.topics.asScala.map(topicName => (topicName, metadataCache.getTopicId(topicName)))
+      metadataRequest.topics.asScala.map(topicName => (topicName, None))
     }.sortBy(_._1)
 
     val cursor = metadataRequest.cursor()
@@ -1519,15 +1519,15 @@ class KafkaApis(val requestChannel: RequestChannel,
       Math.max(Math.min(config.maxRequestPaginationSizeLimit, metadataRequest.responsePaginationLimit), 1) else -1
     lazy val allowCreateCluster = authHelper.authorize(request.context, CREATE, CLUSTER, CLUSTER_NAME, logIfDenied = false)
     breakable {
-      for (i <- topicMap.indices) {
-        val tuple = topicMap(i)
+      var i = 0
+      topicMap.foreach{ tuple=>
         val topicName = tuple._1
         val topicId = tuple._2
-        val partitionStartIndex = if (metadataRequest.pagination() && cursorTopicName == topicName) cursor.partitionIndex() else 0
 
+        val partitionStartIndex = if (metadataRequest.pagination() && cursorTopicName == topicName) cursor.partitionIndex() else 0
         if (partitionStartIndex != -1) {
           val (topicResponse, nextPartition) = if (useTopicId && topicName.isEmpty) {
-            (Some(metadataResponseTopic(Errors.UNKNOWN_TOPIC_ID, null, topicId, isInternal = false, util.Collections.emptyList())), -1)
+            (Some(metadataResponseTopic(Errors.UNKNOWN_TOPIC_ID, null, topicId.getOrElse(Uuid.ZERO_UUID), isInternal = false, util.Collections.emptyList())), -1)
           } else {
             if (!metadataRequest.pagination || topicName.compare(cursorTopicName) >= 0) {
               //2.根据topic描述权限分类topic
@@ -1546,7 +1546,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                 if (notAllowExposeTopic)
                   (None, -1)
                 else if (useTopicId)
-                  (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, null, topicId, isInternal = false, util.Collections.emptyList())), -1)
+                  (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, null, topicId.getOrElse(Uuid.ZERO_UUID), isInternal = false, util.Collections.emptyList())), -1)
                 else
                   (Some(metadataResponseTopic(Errors.TOPIC_AUTHORIZATION_FAILED, topicName, Uuid.ZERO_UUID, isInternal = false, util.Collections.emptyList())), -1)
               }
@@ -1573,8 +1573,8 @@ class KafkaApis(val requestChannel: RequestChannel,
                 }
               }
             }
-
           }
+          i += 1
         }
       }
     }
@@ -1599,7 +1599,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         controllerId.getOrElse(MetadataResponse.NO_CONTROLLER_ID),
         metadataResponseTopics.asJava,
         clusterAuthorizedOperations,
-        if (resultCursor.topicName() != null) resultCursor else null
+        if (resultCursor.topicName() != null && resultCursor.topicName().nonEmpty) resultCursor else null
       ))
   }
 
