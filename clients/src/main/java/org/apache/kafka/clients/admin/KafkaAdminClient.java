@@ -287,6 +287,7 @@ import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -2115,40 +2116,6 @@ public class KafkaAdminClient extends AdminClient {
         };
     }
 
-    /**
-     *     public ListTopicsResult listTopics(final ListTopicsOptions options) {
-     *         final KafkaFutureImpl<Map<String, TopicListing>> topicListingFuture = new KafkaFutureImpl<>();
-     *         final long now = time.milliseconds();
-     *         runnable.call(new Call("listTopics", calcDeadlineMs(now, options.timeoutMs()),
-     *             new LeastLoadedNodeProvider()) {
-     *
-     *             MetadataRequest.Builder createRequest(int timeoutMs) {
-     *                 MetadataRequestData metadataRequestData = new MetadataRequestData()
-     *                         .setTopics(null)
-     *                         .setAllowAutoTopicCreation(true)
-     *                         .setResponsePaginationLimit(options.paginationSizeLimitPerResponse());
-     *                 return new MetadataRequest.Builder(metadataRequestData);
-     *             }
-     *
-     *             void handleResponse(AbstractResponse abstractResponse) {
-     *                 MetadataResponse response = (MetadataResponse) abstractResponse;
-     *                 Map<String, TopicListing> topicListing = new HashMap<>();
-     *                 for (MetadataResponse.TopicMetadata topicMetadata : response.topicMetadata()) {
-     *                     String topicName = topicMetadata.topic();
-     *                     boolean isInternal = topicMetadata.isInternal();
-     *                     if (!topicMetadata.isInternal() || options.shouldListInternal())
-     *                         topicListing.put(topicName, new TopicListing(topicName, topicMetadata.topicId(), isInternal));
-     *                 }
-     *                 topicListingFuture.complete(topicListing);
-     *             }
-     *
-     *             void handleFailure(Throwable throwable) {
-     *                 topicListingFuture.completeExceptionally(throwable);
-     *             }
-     *         }, now);
-     *         return new ListTopicsResult(topicListingFuture);
-     *     }
-     */
     @Override
     public ListTopicsResult listTopics(final ListTopicsOptions options) {
         final KafkaFutureImpl<Map<String, TopicListing>> topicListingFuture = new KafkaFutureImpl<>();
@@ -2179,8 +2146,9 @@ public class KafkaAdminClient extends AdminClient {
                 for (MetadataResponse.TopicMetadata topicMetadata : response.topicMetadata()) {
                     String topicName = topicMetadata.topic();
                     boolean isInternal = topicMetadata.isInternal();
-                    if (!topicMetadata.isInternal() || options.shouldListInternal())
+                    if (!topicMetadata.isInternal() || options.shouldListInternal()) {
                         topicListings.put(topicName, new TopicListing(topicName, topicMetadata.topicId(), isInternal));
+                    }
                 }
 
                 if (response.cursor() != null) {

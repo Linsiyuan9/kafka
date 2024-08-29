@@ -1,0 +1,176 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  SIGSEGV (0xb) at pc=0x0000000000000000, pid=15002, tid=0x00007f1a349ff6c0
+#
+# JRE version: Java(TM) SE Runtime Environment (8.0_421) (build 1.8.0_421-b09)
+# Java VM: Java HotSpot(TM) 64-Bit Server VM (25.421-b09 mixed mode linux-amd64 compressed oops)
+# Problematic frame:
+# C  0x0000000000000000
+#
+# Core dump written. Default location: Core dumps may be processed with "/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -- %E" (or dumping to /home/lsy/code/kafka/kafka/streams/core.15002)
+#
+# If you would like to submit a bug report, please visit:
+#   http://bugreport.java.com/bugreport/crash.jsp
+# The crash happened outside the Java Virtual Machine in native code.
+# See problematic frame for where to report the bug.
+#
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x00007f1bc598c000):  JavaThread "app-shouldGoThroughRebalancingCorrectlyTvLtISs7RWuSemkBjWXLGA-0fd4b53b-edcf-4cf0-abe5-663850877235-StreamThread-1" [_thread_in_native, id=27123, stack(0x00007f1a34600000,0x00007f1a34a00000)]
+
+siginfo: si_signo: 11 (SIGSEGV), si_code: 1 (SEGV_MAPERR), si_addr: 0x0000000000000000
+
+Registers:
+RAX=0x00007f1a2bc872e0, RBX=0x00007f1b9c018fb0, RCX=0x0000000000000000, RDX=0x00007f1bc597e8e0
+RSP=0x00007f1a349fccf8, RBP=0x00007f1a349fd030, RSI=0x00007f1a349fd040, RDI=0x00007f1a2bca8ae0
+R8 =0x0000000000000073, R9 =0x0000000000000000, R10=0x00000000ffffffff, R11=0x0000000000000000
+R12=0x0000000000000003, R13=0x00007f1b9c018fb0, R14=0x00007f1a349fd040, R15=0x00007f1a349fd278
+RIP=0x0000000000000000, EFLAGS=0x0000000000010246, CSGSFS=0x002b000000000033, ERR=0x0000000000000014
+  TRAPNO=0x000000000000000e
+
+Top of Stack: (sp=0x00007f1a349fccf8)
+0x00007f1a349fccf8:   00007f1a2b555fa3 0000000000278d00
+0x00007f1a349fcd08:   c486dbb498f5ed00 0000000000000000
+0x00007f1a349fcd18:   00007f1a349fd040 0000000000000000
+0x00007f1a349fcd28:   00000000000000db 0000000000000000
+0x00007f1a349fcd38:   00007f19a8006cf0 00007f1a349fcd80
+0x00007f1a349fcd48:   00007f1a34abb5dc 00000000000000db
+0x00007f1a349fcd58:   00007f1a02733af5 0000003b349f0000
+0x00007f1a349fcd68:   00007f1a349fce40 ffffffffffffffc8
+0x00007f1a349fcd78:   0000000000000000 00007f1a349fcdb0
+0x00007f1a349fcd88:   00007f1bccca1ac2 0000000000000001
+0x00007f1a349fcd98:   00007f1b9c01b240 00007f1a349fcdb0
+0x00007f1a349fcda8:   00007f1a2b627899 00007f1a349fce80
+0x00007f1a349fcdb8:   00007f1a2b3ed70b 00007f1a349fcdf0
+0x00007f1a349fcdc8:   00007f1a349fce40 00007f1b9c01b240
+0x00007f1a349fcdd8:   0000000000000158 0000000000000158
+0x00007f1a349fcde8:   00007f1a349fcec0 00007f1a349fce80
+0x00007f1a349fcdf8:   ffffffffffffff88 0000000000000002
+0x00007f1a349fce08:   00007f1b9c00fce0 00007f1a349fce50
+0x00007f1a349fce18:   00007f1bcccadd9e 00007f1a349fce80
+0x00007f1a349fce28:   ffffffffffffff88 0000000000000002
+0x00007f1a349fce38:   00007f1b9c00df80 00007f1b9c0ac610
+0x00007f1a349fce48:   c486dbb498f5ed00 00007f1a349fce80
+0x00007f1a349fce58:   00007f1a349fce90 0000000000000003
+0x00007f1a349fce68:   00007f1a349fd278 00007f1a349fd040
+0x00007f1a349fce78:   0000000000000001 00007f1a349fcf50
+0x00007f1a349fce88:   00007f1bccc8fcd1 00007f1a349fd040
+0x00007f1a349fce98:   00007f1a349fd094 00007f1a349fd233
+0x00007f1a349fcea8:   0000000000000000 00007f1b00000002
+0x00007f1a349fceb8:   00007f1b9c04e718 0000000000000000
+0x00007f1a349fcec8:   000000020148b8b8 00007f1b9c01b240
+0x00007f1a349fced8:   00007f1a349fd290 0000000000000000
+0x00007f1a349fcee8:   0000000000000000 0000000000000000 
+
+Instructions: (pc=0x0000000000000000)
+0xffffffffffffffe0:   
+
+Register to memory mapping:
+
+RAX=0x00007f1a2bc872e0: _ZTVN7rocksdb12ConfigurableE+0x10 in /tmp/librocksdbjni2172223761345783293.so at 0x00007f1a2b000000
+RBX=0x00007f1b9c018fb0 is an unknown value
+RCX=0x0000000000000000 is an unknown value
+RDX=0x00007f1bc597e8e0 is an unknown value
+RSP=0x00007f1a349fccf8 is pointing into the stack for thread: 0x00007f1bc598c000
+RBP=0x00007f1a349fd030 is pointing into the stack for thread: 0x00007f1bc598c000
+RSI=0x00007f1a349fd040 is pointing into the stack for thread: 0x00007f1bc598c000
+RDI=0x00007f1a2bca8ae0: <offset 0xca8ae0> in /tmp/librocksdbjni2172223761345783293.so at 0x00007f1a2b000000
+R8 =0x0000000000000073 is an unknown value
+R9 =0x0000000000000000 is an unknown value
+R10=0x00000000ffffffff is an unallocated location in the heap
+R11=0x0000000000000000 is an unknown value
+R12=0x0000000000000003 is an unknown value
+R13=0x00007f1b9c018fb0 is an unknown value
+R14=0x00007f1a349fd040 is pointing into the stack for thread: 0x00007f1bc598c000
+R15=0x00007f1a349fd278 is pointing into the stack for thread: 0x00007f1bc598c000
+
+
+Stack: [0x00007f1a34600000,0x00007f1a34a00000],  sp=0x00007f1a349fccf8,  free space=4083k
+Java frames: (J=compiled Java code, j=interpreted, Vv=VM code)
+j  org.rocksdb.RocksDB.closeDatabase(J)V+0
+j  org.rocksdb.RocksDB.close()V+61
+j  org.apache.kafka.streams.state.internals.RocksDBStore.close()V+79
+j  org.apache.kafka.streams.state.internals.WrappedStateStore.close()V+4
+j  org.apache.kafka.streams.state.internals.MeteredKeyValueStore.close()V+7
+j  org.apache.kafka.streams.processor.internals.ProcessorStateManager.close()V+113
+j  org.apache.kafka.streams.processor.internals.StateManagerUtil.closeStateManager(Lorg/slf4j/Logger;Ljava/lang/String;ZZLorg/apache/kafka/streams/processor/internals/ProcessorStateManager;Lorg/apache/kafka/streams/processor/internals/StateDirectory;Lorg/apache/kafka/streams/processor/internals/Task$TaskType;)V+56
+j  org.apache.kafka.streams.processor.internals.StreamTask.lambda$close$0(Z)V+24
+j  org.apache.kafka.streams.processor.internals.StreamTask$$Lambda$2538.run()V+8
+J 10535 C1 org.apache.kafka.streams.processor.internals.TaskManager.executeAndMaybeSwallow(ZLjava/lang/Runnable;Ljava/lang/String;Lorg/slf4j/Logger;)V (18 bytes) @ 0x00007f1bb6b000fc [0x00007f1bb6affac0+0x63c]
+j  org.apache.kafka.streams.processor.internals.StreamTask.close(Z)V+82
+j  org.apache.kafka.streams.processor.internals.StreamTask.closeDirty()V+10
+j  org.apache.kafka.streams.processor.internals.TaskManager.closeTaskDirty(Lorg/apache/kafka/streams/processor/internals/Task;Z)V+63
+j  org.apache.kafka.streams.processor.internals.TaskManager.closeRunningTasksDirty()V+66
+j  org.apache.kafka.streams.processor.internals.TaskManager.handleLostAll()V+13
+j  org.apache.kafka.streams.processor.internals.StreamsRebalanceListener.onPartitionsLost(Ljava/util/Collection;)V+63
+j  org.apache.kafka.clients.consumer.internals.ConsumerRebalanceListenerInvoker.invokePartitionsLost(Ljava/util/SortedSet;)Ljava/lang/Exception;+133
+j  org.apache.kafka.clients.consumer.internals.ConsumerCoordinator.onJoinPrepare(Lorg/apache/kafka/common/utils/Timer;ILjava/lang/String;)Z+395
+j  org.apache.kafka.clients.consumer.internals.AbstractCoordinator.joinGroupIfNeeded(Lorg/apache/kafka/common/utils/Timer;)Z+45
+J 7752 C1 org.apache.kafka.clients.consumer.internals.ConsumerCoordinator.poll(Lorg/apache/kafka/common/utils/Timer;Z)Z (203 bytes) @ 0x00007f1bb640278c [0x00007f1bb6400ba0+0x1bec]
+J 10595 C1 org.apache.kafka.clients.consumer.internals.ClassicKafkaConsumer.poll(Lorg/apache/kafka/common/utils/Timer;Z)Lorg/apache/kafka/clients/consumer/ConsumerRecords; (239 bytes) @ 0x00007f1bb6b1c5ac [0x00007f1bb6b1ba00+0xbac]
+J 10594 C1 org.apache.kafka.clients.consumer.internals.ClassicKafkaConsumer.poll(Ljava/time/Duration;)Lorg/apache/kafka/clients/consumer/ConsumerRecords; (16 bytes) @ 0x00007f1bb5665ffc [0x00007f1bb5665ec0+0x13c]
+J 10593 C1 org.apache.kafka.clients.consumer.KafkaConsumer.poll(Ljava/time/Duration;)Lorg/apache/kafka/clients/consumer/ConsumerRecords; (11 bytes) @ 0x00007f1bb5666484 [0x00007f1bb5666380+0x104]
+j  org.apache.kafka.streams.processor.internals.StreamThread.pollRequests(Ljava/time/Duration;)Lorg/apache/kafka/clients/consumer/ConsumerRecords;+17
+j  org.apache.kafka.streams.processor.internals.StreamThread.pollPhase()J+103
+J 11282 C1 org.apache.kafka.streams.processor.internals.StreamThread.runOnceWithoutProcessingThreads()V (773 bytes) @ 0x00007f1bb6d1eb4c [0x00007f1bb6d1e9c0+0x18c]
+j  org.apache.kafka.streams.processor.internals.StreamThread.runLoop()Z+107
+j  org.apache.kafka.streams.processor.internals.StreamThread.run()V+36
+v  ~StubRoutines::call_stub
+
+---------------  P R O C E S S  ---------------
+
+Java Threads: ( => current thread )
+  0x00007f193c038800 JavaThread "Controller-0-to-broker-0-send-thread" [_thread_blocked, id=29428, stack(0x00007f1b60400000,0x00007f1b60800000)]
+  0x00007f1b440e5800 JavaThread "SIGTERM handler" daemon [_thread_blocked, id=29172, stack(0x00007f1941000000,0x00007f1941400000)]
+  0x00007f1aa401d800 JavaThread "zk-client-Kafkaserver-reinit-0-EventThread" daemon [_thread_blocked, id=29141, stack(0x00007f1941800000,0x00007f1941c00000)]
+  0x00007f1aa401c800 JavaThread "zk-client-Kafkaserver-reinit-0-SendThread(127.0.0.1:46179)" daemon [_thread_in_native, id=29137, stack(0x00007f18af200000,0x00007f18af600000)]
+  0x00007f1a9800b000 JavaThread "zk-client-Kafkaserver-reinit-0" daemon [_thread_blocked, id=29064, stack(0x00007f1942000000,0x00007f1942400000)]
+  0x00007f1b44080000 JavaThread "SIGTERM handler" daemon [_thread_blocked, id=28728, stack(0x00007f18a4a01000,0x00007f18a5201000)]
+  0x00007f1bc5a8c000 JavaThread "kafka-coordinator-heartbeat-thread | group-shouldGoThroughRebalancingCorrectlyTvLtISs7RWuSemkBjWXLGA" daemon [_thread_blocked, id=28219, stack(0x00007f19e3c00000,0x00007f19e4000000)]
+  0x00007f1930001800 JavaThread "executor-Heartbeat" [_thread_blocked, id=27338, stack(0x00007f18a8601000,0x00007f18a8e01000)]
+  0x00007f1b9c00c000 JavaThread "kafka-coordinator-heartbeat-thread | app-shouldGoThroughRebalancingCorrectlyTvLtISs7RWuSemkBjWXLGA" daemon [_thread_blocked, id=27125, stack(0x00007f1940401000,0x00007f1940c01000)]
+  0x00007f1bc59af000 JavaThread "app-shouldGoThroughRebalancingCorrectlyTvLtISs7RWuSemkBjWXLGA-0fd4b53b-edcf-4cf0-abe5-663850877235-CleanupThread" daemon [_thread_blocked, id=27124, stack(0x00007f1b3dc00000,0x00007f1b3e000000)]
+=>0x00007f1bc598c000 JavaThread "app-shouldGoThroughRebalancingCorrectlyTvLtISs7RWuSemkBjWXLGA-0fd4b53b-edcf-4cf0-abe5-663850877235-StreamThread-1" [_thread_in_native, id=27123, stack(0x00007f1a34600000,0x00007f1a34a00000)]
+  0x00007f1bc5981800 JavaThread "app-shouldGoThroughRebalancingCorrectlyTvLtISs7RWuSemkBjWXLGA-0fd4b53b-edcf-4cf0-abe5-663850877235-StateUpdater-1" [_thread_blocked, id=27110, stack(0x00007f1b3e800000,0x00007f1b3ec00000)]
+  0x00007f1bc597e000 JavaThread "kafka-producer-network-thread | app-shouldGoThroughRebalancingCorrectlyTvLtISs7RWuSemkBjWXLGA-0fd4b53b-edcf-4cf0-abe5-663850877235-StreamThread-1-producer" daemon [_thread_in_native, id=27103, stack(0x00007f1b3e000000,0x00007f1b3e400000)]
+  0x00007f1bc5982800 JavaThread "kafka-admin-client-thread | app-shouldGoThroughRebalancingCorrectlyTvLtISs7RWuSemkBjWXLGA-0fd4b53b-edcf-4cf0-abe5-663850877235-admin" daemon [_thread_in_native, id=27096, stack(0x00007f1a34200000,0x00007f1a34600000)]
+  0x00007f1978001000 JavaThread "executor-Fetch" [_thread_blocked, id=18758, stack(0x00007f1b24200000,0x00007f1b24600000)]
+  0x00007f192c002000 JavaThread "executor-Rebalance" [_thread_blocked, id=18578, stack(0x00007f1b26800000,0x00007f1b26c00000)]
+  0x00007f1bc51b9000 JavaThread "junit-jupiter-timeout-watcher" [_thread_blocked, id=17936, stack(0x00007f1b56400000,0x00007f1b56800000)]
+  0x00007f19081e0000 JavaThread "kafka-scheduler-9" daemon [_thread_blocked, id=17806, stack(0x00007f1b54a00000,0x00007f1b54e00000)]
+  0x00007f1bc57af000 JavaThread "data-plane-kafka-socket-acceptor-ListenerName(PLAINTEXT)-PLAINTEXT-0" [_thread_in_native_trans, id=17589, stack(0x00007f1b56c00000,0x00007f1b57000000)]
+  0x00007f1bc57ad000 JavaThread "data-plane-kafka-network-thread-0-ListenerName(PLAINTEXT)-PLAINTEXT-2" [_thread_blocked, id=17588, stack(0x00007f1b57000000,0x00007f1b57400000)]
+  0x00007f1bc57ab000 JavaThread "data-plane-kafka-network-thread-0-ListenerName(PLAINTEXT)-PLAINTEXT-1" [_thread_blocked, id=17587, stack(0x00007f1b57400000,0x00007f1b57800000)]
+  0x00007f1bc57a9800 JavaThread "data-plane-kafka-network-thread-0-ListenerName(PLAINTEXT)-PLAINTEXT-0" [_thread_blocked, id=17586, stack(0x00007f1b57800000,0x00007f1b57c00000)]
+  0x00007f1bc579f800 JavaThread "/config/changes-event-process-thread" [_thread_blocked, id=17585, stack(0x00007f1b57c00000,0x00007f1b58000000)]
+  0x00007f1bc577c000 JavaThread "data-plane-kafka-request-handler-7" daemon [_thread_blocked, id=17574, stack(0x00007f1b60800000,0x00007f1b60c00000)]
+  0x00007f1bc57e5800 JavaThread "data-plane-kafka-request-handler-6" daemon [_thread_blocked, id=17571, stack(0x00007f1b60c00000,0x00007f1b61000000)]
+  0x00007f1bc57e4000 JavaThread "data-plane-kafka-request-handler-5" daemon [_thread_blocked, id=17569, stack(0x00007f1b61000000,0x00007f1b61400000)]
+  0x00007f1bc57e2000 JavaThread "data-plane-kafka-request-handler-4" daemon [_thread_blocked, id=17568, stack(0x00007f1b61400000,0x00007f1b61800000)]
+  0x00007f1bc57e0800 JavaThread "data-plane-kafka-request-handler-3" daemon [_thread_blocked, id=17566, stack(0x00007f1b61800000,0x00007f1b61c00000)]
+  0x00007f1bc57df000 JavaThread "data-plane-kafka-request-handler-2" daemon [_thread_blocked, id=17565, stack(0x00007f1b61c00000,0x00007f1b62000000)]
+  0x00007f1bc57da800 JavaThread "data-plane-kafka-request-handler-1" daemon [_thread_blocked, id=17564, stack(0x00007f1b62000000,0x00007f1b62400000)]
+  0x00007f1bc57d8000 JavaThread "data-plane-kafka-request-handler-0" daemon [_thread_blocked, id=17563, stack(0x00007f1b62400000,0x00007f1b62800000)]
+  0x00007f1bc576c800 JavaThread "ExpirationReaper-0-AlterAcls" [_thread_blocked, id=17560, stack(0x00007f1b62a00000,0x00007f1b62e00000)]
+  0x00007f1bc5731800 JavaThread "TxnMarkerSenderThread-0" [_thread_in_native, id=17544, stack(0x00007f1b62e00000,0x00007f1b63200000)]
+  0x00007f1bc5701800 JavaThread "transaction-log-manager-0" daemon [_thread_blocked, id=17540, stack(0x00007f1b63200000,0x00007f1b63600000)]
+  0x00007f1bc56e9800 JavaThread "group-metadata-manager-0" daemon [_thread_blocked, id=17529, stack(0x00007f1b63800000,0x00007f1b63c00000)]
+  0x00007f1bc56b2000 JavaThread "ExpirationReaper-0-Rebalance" [_thread_blocked, id=17520, stack(0x00007f1b63c00000,0x00007f1b64000000)]
+  0x00007f1bc56af000 JavaThread "ExpirationReaper-0-Heartbeat" [_thread_blocked, id=17517, stack(0x00007f1b68200000,0x00007f1b68600000)]
+  0x00007f1bc5132800 JavaThread "ExpirationReaper-0-topic" [_thread_blocked, id=17501, stack(0x00007f1b68600000,0x00007f1b68a00000)]
+  0x00007f1bc510c800 JavaThread "controller-event-thread" [_thread_blocked, id=17485, stack(0x00007f1b68a00000,0x00007f1b68e00000)]
+  0x00007f19a8002800 JavaThread "kafka-scheduler-8" daemon [_thread_blocked, id=17450, stack(0x00007f1b69000000,0x00007f1b69400000)]
+  0x00007f1bc5436800 JavaThread "AddPartitionsToTxnSenderThread-0" [_thread_in_native, id=17446, stack(0x00007f1b69400000,0x00007f1b69800000)]
+  0x00007f1bc5435000 JavaThread "LogDirFailureHandler" [_thread_blocked, id=17445, stack(0x00007f1b69800000,0x00007f1b69c00000)]
+  0x00007f1bc5433000 JavaThread "kafka-scheduler-7" daemon [_thread_blocked, id=17444, stack(0x00007f1b69c00000,0x00007f1b6a000000)]
+  0x00007f19b4002800 JavaThread "kafka-scheduler-6" daemon [_thread_blocked, id=17443, stack(0x00007f1b6a000000,0x00007f1b6a400000)]
+  0x00007f1bc5431800 JavaThread "kafka-scheduler-5" daemon [_thread_blocked, id=17441, stack(0x00007f1b6a400000,0x00007f1b6a800000)]
+  0x00007f1bc5414800 JavaThread "ExpirationReaper-0-RemoteFetch" [_thread_blocked, id=17425, stack(0x00007f1b6a800000,0x00007f1b6ac00000)]
+  0x00007f1bc5413000 JavaThread "ExpirationReaper-0-ElectLeader" [_thread_blocked, id=17423, stack(0x00007f1b6ac00000,0x00007f1b6b000000)]
+  0x00007f1bc5475000 JavaThread "ExpirationReaper-0-DeleteRecords" [_thread_blocked, id=17419, stack(0x00007f1b6b000000,0x00007f1b6b400000)]
+  0x00007f1bc5473800 JavaThread "ExpirationReaper-0-Fetch" [_thread_blocked, id=17418, stack(0x00007f1b6b400000,0x00007f1b6b800000)]
+  0x00007f1bc5478000 JavaThread "ExpirationReaper-0-Produce" [_thread_blocked, id=17416, stack(0x00007f1b6b800000,0x00007f1b6bc00000)]
+  0x00007f1bc53b9000 JavaThread "zk-broker-0-to-controller-alter-partition-channel-manager" [_thread_in_native, id=17393, stack(0x00007f1b6bc00000,0x00007f1b6c000000)]
+  0x00007f1bc44e7000 

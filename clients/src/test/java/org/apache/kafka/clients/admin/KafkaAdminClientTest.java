@@ -135,6 +135,7 @@ import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.ListOffsetsResponseData.ListOffsetsTopicResponse;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.ListTransactionsResponseData;
+import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.MetadataResponseData.MetadataResponsePartition;
 import org.apache.kafka.common.message.MetadataResponseData.MetadataResponseTopic;
@@ -1498,6 +1499,78 @@ public class KafkaAdminClientTest {
             topicDescription = topicDescriptions.get(topicName1);
             assertEquals(1, topicDescription.partitions().size());
             assertNull(topicDescription.authorizedOperations());
+        }
+    }
+
+    private void addPartitionToMetadataRequestDataResponse(MetadataResponseData metadataResponseData,
+                                                           String topicName,
+                                                           Uuid topicId,
+                                                           List<Integer> partitions) {
+        MetadataResponseTopic metadataResponseTopic = new MetadataResponseTopic();
+        metadataResponseTopic.setName(topicName);
+        metadataResponseTopic.setIsInternal(false);
+        metadataResponseTopic.setTopicId(topicId);
+        metadataResponseTopic.setErrorCode((short) 0);
+        metadataResponseTopic.setTopicAuthorizedOperations(0);
+        for (Integer partitionId : partitions) {
+            metadataResponseTopic.partitions().add(new MetadataResponsePartition()
+                    .setPartitionIndex(partitionId)
+                    .setLeaderId(0)
+                    .setLeaderEpoch(0)
+                    .setErrorCode((short) 0)
+                    .setIsrNodes(singletonList(0))
+                    .setOfflineReplicas(singletonList(1))
+                    .setReplicaNodes(singletonList(0))
+            );
+        }
+        metadataResponseData.topics().add(metadataResponseTopic);
+    }
+
+    @Test
+    public void testListTopicsWithMetadataApiBasic() throws ExecutionException, InterruptedException {
+        try (AdminClientUnitTestEnv env = mockClientEnv()) {
+            env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
+            String topicName0 = "test-0";
+            String topicName1 = "test-1";
+            Map<String, Uuid> topics = new HashMap<>();
+            topics.put(topicName0, Uuid.randomUuid());
+            topics.put(topicName1, Uuid.randomUuid());
+
+            int authorisedOperations = Utils.to32BitField(Utils.mkSet(AclOperation.DESCRIBE.code()));
+            MetadataResponseData dataFirstPart = new MetadataResponseData();
+            dataFirstPart.setClusterId(env.cluster().clusterResource().clusterId());
+            dataFirstPart.setControllerId(2);
+            dataFirstPart.setClusterAuthorizedOperations(authorisedOperations);
+            addPartitionToMetadataRequestDataResponse(dataFirstPart, topicName0, topics.get(topicName0), singletonList(0));
+            dataFirstPart.setNextCursor(new MetadataResponseData.Cursor()
+                    .setTopicName(topicName0)
+                    .setPartitionIndex(1));
+
+            env.kafkaClient().prepareResponse(body -> {
+                MetadataRequestData request = (MetadataRequestData) body.data();
+                return request.cursor() == null;
+            }, new MetadataResponse(dataFirstPart, MetadataResponseData.HIGHEST_SUPPORTED_VERSION));
+
+            MetadataResponseData dataSecondPart = new MetadataResponseData();
+            dataSecondPart.setClusterId(env.cluster().clusterResource().clusterId());
+            dataSecondPart.setControllerId(2);
+            dataSecondPart.setClusterAuthorizedOperations(authorisedOperations);
+            addPartitionToMetadataRequestDataResponse(dataSecondPart, topicName0, topics.get(topicName0), singletonList(1));
+            addPartitionToMetadataRequestDataResponse(dataSecondPart, topicName1, topics.get(topicName1), singletonList(0));
+            dataSecondPart.setNextCursor(null);
+
+            env.kafkaClient().prepareResponse(body -> {
+                MetadataRequestData request = (MetadataRequestData) body.data();
+                MetadataRequestData.MetadataCursor cursor = request.cursor();
+                return cursor != null && Objects.equals(cursor.topicName(), topicName0) && cursor.partitionIndex() == 1;
+            }, new MetadataResponse(dataSecondPart, MetadataResponseData.HIGHEST_SUPPORTED_VERSION));
+
+            ListTopicsResult result = env.adminClient().listTopics(new ListTopicsOptions().paginationSizeLimitPerResponse(2));
+            Map<String, TopicListing> topicListingMap = result.namesToListings().get();
+            assertEquals(2, topicListingMap.size());
+            TopicListing topic1Listing = topicListingMap.get(topicName1);
+            assertFalse(topic1Listing.isInternal());
+            assertEquals(topics.get(topicName1), topic1Listing.topicId());
         }
     }
 
