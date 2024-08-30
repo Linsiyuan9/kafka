@@ -1520,10 +1520,33 @@ public class KafkaAdminClientTest {
                     .setErrorCode((short) 0)
                     .setIsrNodes(singletonList(0))
                     .setOfflineReplicas(singletonList(1))
-                    .setReplicaNodes(singletonList(0))
+                    .setReplicaNodes(asList(0, 1, 2))
             );
         }
         metadataResponseData.topics().add(metadataResponseTopic);
+    }
+
+    private static MetadataResponse prepareMetadataResponse(
+            int throttleTimeMs,
+            Collection<Node> brokers,
+            String clusterId,
+            int controllerId,
+            int clusterAuthorizedOperations
+    ) {
+        MetadataResponseData data = new MetadataResponseData();
+        data.setThrottleTimeMs(throttleTimeMs);
+        data.setClusterId(clusterId);
+        data.setControllerId(controllerId);
+        data.setClusterAuthorizedOperations(clusterAuthorizedOperations);
+
+        brokers.forEach(broker ->
+                data.brokers().add(new MetadataResponseData.MetadataResponseBroker()
+                        .setHost(broker.host())
+                        .setPort(broker.port())
+                        .setNodeId(broker.id())
+                        .setRack(broker.rack())));
+
+        return new MetadataResponse(data,MetadataResponseData.HIGHEST_SUPPORTED_VERSION);
     }
 
     @Test
