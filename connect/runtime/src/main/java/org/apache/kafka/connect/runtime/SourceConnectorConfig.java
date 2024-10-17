@@ -49,7 +49,7 @@ import static org.apache.kafka.connect.source.SourceTask.TransactionBoundary.DEF
 import static org.apache.kafka.connect.source.SourceTask.TransactionBoundary.INTERVAL;
 import static org.apache.kafka.connect.source.SourceTask.TransactionBoundary.POLL;
 
-public class SourceConnectorConfig extends ConnectorConfig {
+public final class SourceConnectorConfig extends ConnectorConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SourceConnectorConfig.class);
 
@@ -248,7 +248,6 @@ public class SourceConnectorConfig extends ConnectorConfig {
         return newDef;
     }
 
-    @SuppressWarnings("this-escape")
     public SourceConnectorConfig(Plugins plugins, Map<String, String> props, boolean createTopics) {
         super(plugins, configDef(), props);
         if (createTopics && props.entrySet().stream().anyMatch(e -> e.getKey().startsWith(TOPIC_CREATION_PREFIX))) {
