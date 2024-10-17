@@ -66,6 +66,7 @@ public class Plugins {
     }
 
     // VisibleForTesting
+
     @SuppressWarnings("this-escape")
     Plugins(Map<String, String> props, ClassLoader parent, ClassLoaderFactory factory) {
         String pluginPath = WorkerConfig.pluginPath(props);

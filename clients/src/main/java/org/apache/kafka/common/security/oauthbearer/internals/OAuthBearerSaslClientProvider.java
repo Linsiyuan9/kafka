@@ -25,14 +25,14 @@ import java.security.Security;
 public class OAuthBearerSaslClientProvider extends Provider {
     private static final long serialVersionUID = 1L;
 
-    @SuppressWarnings("this-escape")
-    protected OAuthBearerSaslClientProvider() {
+    private OAuthBearerSaslClientProvider() {
         super("SASL/OAUTHBEARER Client Provider", "1.0", "SASL/OAUTHBEARER Client Provider for Kafka");
-        put("SaslClientFactory." + OAuthBearerLoginModule.OAUTHBEARER_MECHANISM,
-                OAuthBearerSaslClientFactory.class.getName());
     }
 
     public static void initialize() {
-        Security.addProvider(new OAuthBearerSaslClientProvider());
+        OAuthBearerSaslClientProvider oAuthBearerSaslClientProvider = new OAuthBearerSaslClientProvider();
+        oAuthBearerSaslClientProvider.put("SaslClientFactory." + OAuthBearerLoginModule.OAUTHBEARER_MECHANISM,
+                OAuthBearerSaslClientFactory.class.getName());
+        Security.addProvider(oAuthBearerSaslClientProvider);
     }
 }

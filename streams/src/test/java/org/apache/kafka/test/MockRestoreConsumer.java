@@ -41,7 +41,6 @@ public class MockRestoreConsumer<K, V> extends MockConsumer<byte[], byte[]> {
 
     private ArrayList<ConsumerRecord<byte[], byte[]>> recordBuffer = new ArrayList<>();
 
-    @SuppressWarnings("this-escape")
     public MockRestoreConsumer(final Serializer<K> keySerializer, final Serializer<V> valueSerializer) {
         super(OffsetResetStrategy.EARLIEST);
 
@@ -51,7 +50,7 @@ public class MockRestoreConsumer<K, V> extends MockConsumer<byte[], byte[]> {
     }
 
     // reset this mock restore consumer for a state store registration
-    public void reset() {
+    public final void reset() {
         assignedPartition = null;
         seekOffset = -1L;
         endOffset = 0L;

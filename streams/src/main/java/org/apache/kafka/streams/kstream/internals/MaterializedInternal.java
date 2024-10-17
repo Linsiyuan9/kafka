@@ -36,7 +36,6 @@ public class MaterializedInternal<K, V, S extends StateStore> extends Materializ
         this(materialized, null, null);
     }
 
-    @SuppressWarnings("this-escape")
     public MaterializedInternal(final Materialized<K, V, S> materialized,
                                 final InternalNameProvider nameProvider,
                                 final String generatedStorePrefix) {
@@ -78,7 +77,7 @@ public class MaterializedInternal<K, V, S extends StateStore> extends Materializ
         return queryable ? storeName() : null;
     }
 
-    public String storeName() {
+    public final String storeName() {
         if (storeSupplier != null) {
             return storeSupplier.name();
         }
